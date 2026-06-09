@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open, save, ask } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import CodeMirror, { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { search, openSearchPanel } from "@codemirror/search";
@@ -490,8 +491,15 @@ function App() {
 
   useEffect(() => {
     check()
-      .then((update) => {
-        if (update) console.info(`Update available: ${update.version}`);
+      .then(async (update) => {
+        if (!update) return;
+        const yes = await ask(
+          `Markappoly ${update.version} is available. Update now? The app will download it and restart.`,
+          { title: "Update available", kind: "info", okLabel: "Update", cancelLabel: "Later" },
+        );
+        if (!yes) return;
+        await update.downloadAndInstall();
+        await relaunch();
       })
       .catch(() => {});
   }, []);
@@ -572,7 +580,7 @@ function App() {
 
   return (
     <div className="app">
-      <header className="toolbar">
+      <header className="toolbar" data-tauri-drag-region>
         <div className="toolbar-group">
           <button className="icon-btn" onClick={prefs.toggleSidebar} title="Toggle sidebar (⌘\)">
             ☰
@@ -617,7 +625,7 @@ function App() {
           </button>
         </div>
 
-        <div className="spacer" />
+        <div className="spacer" data-tauri-drag-region />
 
         <div className="toolbar-group">
           <select

@@ -92,7 +92,6 @@ body {
   padding: 0 14px 0 84px; /* left padding clears the traffic lights */
   border-bottom: 1px solid var(--hairline);
   flex: 0 0 auto;
-  -webkit-app-region: drag;
 }
 
 .toolbar-group {
@@ -103,7 +102,6 @@ body {
 
 .spacer {
   flex: 1 1 auto;
-  -webkit-app-region: drag;
 }
 
 .toolbar button,
