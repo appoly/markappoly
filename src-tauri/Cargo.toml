@@ -1,8 +1,8 @@
 [package]
 name = "markdown-viewer"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "0.3.2"
+description = "A fast, cross-platform Markdown viewer and editor built with Tauri."
+authors = ["Appoly Ltd"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
