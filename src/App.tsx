@@ -10,6 +10,8 @@ import { search, openSearchPanel } from "@codemirror/search";
 import { Preview, extractHeadings, type Heading } from "./markdown";
 import { FindBar } from "./FindBar";
 import { Sidebar, type FileEntry } from "./Sidebar";
+import { TabBar } from "./TabBar";
+import { DiffView } from "./DiffView";
 import { usePreferences, type ThemePref } from "./prefs";
 import {
   markdownToHtml,
@@ -22,6 +24,14 @@ import "./App.css";
 type Mode = "preview" | "edit";
 type ExportKind = "txt" | "html" | "json" | "docx" | "pdf";
 
+type Doc = {
+  id: string;
+  path: string | null;
+  source: string;
+  dirty: boolean;
+  mtime: number | null;
+};
+
 const MD_EXTENSIONS = ["md", "markdown", "mdown", "mkd", "mkdn", "txt"];
 
 const WELCOME = `# Markappoly
@@ -33,6 +43,7 @@ const WELCOME = `# Markappoly
 - Open any \`.md\` file (or a whole folder) and read it nicely formatted
 - Toggle to **Edit** mode (⌘E) — a formatting toolbar appears
 - **Export** to TXT, HTML, JSON, Word or PDF
+- Open several files as **tabs**, and **Compare** two of them side by side
 - Math, diagrams, an outline, find (⌘F), live reload, and more
 
 ### Math & diagrams
@@ -45,14 +56,6 @@ graph LR
   B --> C[Export]
 \`\`\`
 
-### GitHub-flavored too
-
-| Feature | Supported |
-| ------- | :-------: |
-| Tables  | ✅ |
-| Task lists | ✅ |
-| Code highlighting | ✅ |
-
 - [x] Render Markdown
 - [ ] Try ticking this box
 
@@ -64,41 +67,116 @@ function basename(path: string | null): string {
   return path.split(/[\\/]/).pop() ?? "Untitled";
 }
 
+function docName(d: Doc): string {
+  return d.path ? basename(d.path) : "Untitled";
+}
+
+function makeDoc(partial: Partial<Doc> = {}): Doc {
+  return {
+    id: crypto.randomUUID(),
+    path: null,
+    source: "",
+    dirty: false,
+    mtime: null,
+    ...partial,
+  };
+}
+
 function App() {
   const prefs = usePreferences();
-  const [filePath, setFilePath] = useState<string | null>(null);
-  const [source, setSource] = useState<string>(WELCOME);
+  const first = useRef<Doc | null>(null);
+  if (first.current === null) first.current = makeDoc({ source: WELCOME });
+
+  const [docs, setDocs] = useState<Doc[]>(() => [first.current!]);
+  const [activeId, setActiveId] = useState<string>(() => first.current!.id);
   const [mode, setMode] = useState<Mode>("preview");
-  const [dirty, setDirty] = useState(false);
+  const [compare, setCompare] = useState<{ aId: string; bId: string } | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [folderPath, setFolderPath] = useState<string | null>(null);
   const [findOpen, setFindOpen] = useState(false);
 
+  // Always-fresh references so stable callbacks can read current state.
+  const docsRef = useRef(docs);
+  docsRef.current = docs;
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const lastMtime = useRef<number | null>(null);
-  const dirtyRef = useRef(false);
-  useEffect(() => {
-    dirtyRef.current = dirty;
-  }, [dirty]);
+
+  const active = docs.find((d) => d.id === activeId) ?? docs[0];
+  const source = active.source;
+  const dirty = active.dirty;
+  const filePath = active.path;
 
   const headings = useMemo(() => extractHeadings(source), [source]);
   const wordCount = useMemo(() => (source.trim().match(/\S+/g) || []).length, [source]);
   const readMin = Math.max(1, Math.ceil(wordCount / 200));
 
+  const getActive = useCallback(
+    () => docsRef.current.find((d) => d.id === activeIdRef.current) ?? docsRef.current[0],
+    [],
+  );
+  const patchDocById = useCallback((id: string, patch: Partial<Doc>) => {
+    setDocs((ds) => ds.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+  }, []);
+
+  // ----- Tabs -----
+  const selectTab = useCallback((id: string) => {
+    setActiveId(id);
+    setCompare(null);
+  }, []);
+
+  const newDoc = useCallback(() => {
+    const doc = makeDoc({ source: "" });
+    setDocs((ds) => [...ds, doc]);
+    setActiveId(doc.id);
+    setCompare(null);
+    setMode("edit");
+  }, []);
+
+  const closeTab = useCallback((id: string) => {
+    const cur = docsRef.current;
+    const doc = cur.find((d) => d.id === id);
+    if (!doc) return;
+    if (doc.dirty && !window.confirm(`Discard unsaved changes to ${docName(doc)}?`)) return;
+    const idx = cur.findIndex((d) => d.id === id);
+    const next = cur.filter((d) => d.id !== id);
+    if (next.length === 0) {
+      const fresh = makeDoc({ source: "" });
+      setDocs([fresh]);
+      setActiveId(fresh.id);
+      setCompare(null);
+      return;
+    }
+    setDocs(next);
+    if (activeIdRef.current === id) {
+      setActiveId(next[Math.min(idx, next.length - 1)].id);
+    }
+    setCompare((c) => (c && (c.aId === id || c.bId === id) ? null : c));
+  }, []);
+
   // ----- Open / save -----
   const openPath = useCallback(async (path: string) => {
+    const existing = docsRef.current.find((d) => d.path === path);
+    if (existing) {
+      setActiveId(existing.id);
+      setCompare(null);
+      return;
+    }
     try {
       const text = await invoke<string>("read_file", { path });
-      setSource(text);
-      setFilePath(path);
-      setDirty(false);
-      setMode("preview");
+      let mtime: number | null = null;
       try {
-        lastMtime.current = await invoke<number>("file_mtime", { path });
+        mtime = await invoke<number>("file_mtime", { path });
       } catch {
-        lastMtime.current = null;
+        /* ignore */
       }
+      const doc = makeDoc({ path, source: text, dirty: false, mtime });
+      setDocs((ds) => [...ds, doc]);
+      setActiveId(doc.id);
+      setCompare(null);
+      setMode("preview");
     } catch (e) {
       console.error("open failed", e);
     }
@@ -125,73 +203,84 @@ function App() {
   }, []);
 
   const reloadFile = useCallback(async () => {
-    if (!filePath) return;
-    const text = await invoke<string>("read_file", { path: filePath });
-    setSource(text);
-    setDirty(false);
+    const doc = getActive();
+    if (!doc.path) return;
+    const text = await invoke<string>("read_file", { path: doc.path });
+    let mtime: number | null = null;
     try {
-      lastMtime.current = await invoke<number>("file_mtime", { path: filePath });
+      mtime = await invoke<number>("file_mtime", { path: doc.path });
     } catch {
       /* ignore */
     }
-  }, [filePath]);
+    patchDocById(doc.id, { source: text, dirty: false, mtime });
+  }, [getActive, patchDocById]);
 
   const saveFile = useCallback(async () => {
-    let path = filePath;
+    const doc = getActive();
+    let path = doc.path;
     if (!path) {
-      const chosen = await save({
-        filters: [{ name: "Markdown", extensions: ["md"] }],
-      });
+      const chosen = await save({ filters: [{ name: "Markdown", extensions: ["md"] }] });
       if (!chosen) return;
       path = chosen;
-      setFilePath(path);
     }
-    await invoke("write_file", { path, contents: source });
-    setDirty(false);
+    await invoke("write_file", { path, contents: doc.source });
+    let mtime: number | null = null;
     try {
-      lastMtime.current = await invoke<number>("file_mtime", { path });
+      mtime = await invoke<number>("file_mtime", { path });
     } catch {
       /* ignore */
     }
-  }, [filePath, source]);
+    patchDocById(doc.id, { path, dirty: false, mtime });
+  }, [getActive, patchDocById]);
 
   const exportAs = useCallback(
     async (kind: ExportKind) => {
+      const doc = getActive();
+      const src = doc.source;
+      const name = basename(doc.path).replace(/\.[^.]+$/, "") || "document";
+
       if (kind === "pdf") {
+        setCompare(null);
         setMode("preview");
         setTimeout(() => window.print(), 60);
         return;
       }
       if (kind === "docx") {
-        const name = basename(filePath).replace(/\.[^.]+$/, "") || "document";
         const chosen = await save({
           defaultPath: `${name}.docx`,
           filters: [{ name: "Word Document", extensions: ["docx"] }],
         });
         if (!chosen) return;
-        const data = await markdownToDocxBase64(source);
+        const data = await markdownToDocxBase64(src);
         await invoke("write_file_base64", { path: chosen, data });
         return;
       }
 
-      const base = basename(filePath).replace(/\.[^.]+$/, "") || "document";
       let contents: string;
-      if (kind === "txt") contents = source;
-      else if (kind === "html")
-        contents = htmlDocument(basename(filePath), markdownToHtml(source));
-      else contents = JSON.stringify(markdownToAst(source), null, 2);
+      if (kind === "txt") contents = src;
+      else if (kind === "html") contents = htmlDocument(basename(doc.path), markdownToHtml(src));
+      else contents = JSON.stringify(markdownToAst(src), null, 2);
 
       const chosen = await save({
-        defaultPath: `${base}.${kind}`,
+        defaultPath: `${name}.${kind}`,
         filters: [{ name: kind.toUpperCase(), extensions: [kind] }],
       });
       if (!chosen) return;
       await invoke("write_file", { path: chosen, contents });
     },
-    [filePath, source],
+    [getActive],
   );
 
-  // ----- Formatting (operate on the CodeMirror selection) -----
+  // ----- Compare -----
+  const startCompare = useCallback(() => {
+    const cur = docsRef.current;
+    if (cur.length < 2) return;
+    const a = activeIdRef.current;
+    const b = (cur.find((d) => d.id !== a) ?? cur[0]).id;
+    setCompare({ aId: a, bId: b });
+  }, []);
+
+  // ----- Formatting (operate on the active CodeMirror selection) -----
   const wrapSelection = useCallback(
     (before: string, after = before, placeholder = "") => {
       const view = cmRef.current?.view;
@@ -214,10 +303,10 @@ function App() {
     const view = cmRef.current?.view;
     if (!view) return;
     const { from, to } = view.state.selection.main;
-    const first = view.state.doc.lineAt(from).number;
-    const last = view.state.doc.lineAt(to).number;
+    const firstLine = view.state.doc.lineAt(from).number;
+    const lastLine = view.state.doc.lineAt(to).number;
     const changes: { from: number; insert: string }[] = [];
-    for (let n = first; n <= last; n++) {
+    for (let n = firstLine; n <= lastLine; n++) {
       changes.push({ from: view.state.doc.line(n).from, insert: prefix });
     }
     view.dispatch({ changes });
@@ -252,19 +341,17 @@ function App() {
   // ----- Interactive task checkboxes (toggle writes back to source) -----
   const toggleTask = useCallback(
     (index: number) => {
+      const doc = getActive();
       let i = -1;
       const re = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/gm;
-      const updated = source.replace(re, (full, prefix, c) => {
+      const updated = doc.source.replace(re, (full, prefix, c) => {
         i += 1;
         if (i !== index) return full;
         return prefix + (c === " " ? "[x]" : "[ ]");
       });
-      if (updated !== source) {
-        setSource(updated);
-        setDirty(true);
-      }
+      if (updated !== doc.source) patchDocById(doc.id, { source: updated, dirty: true });
     },
-    [source],
+    [getActive, patchDocById],
   );
 
   // ----- Outline navigation -----
@@ -287,25 +374,26 @@ function App() {
     [mode],
   );
 
-  // ----- Live reload: poll mtime, refresh when unchanged locally -----
+  // ----- Live reload: poll the active file's mtime -----
   useEffect(() => {
-    if (!filePath) return;
-    const id = setInterval(async () => {
-      if (dirtyRef.current) return;
+    const path = active.path;
+    const docId = active.id;
+    if (!path) return;
+    const timer = setInterval(async () => {
+      const cur = docsRef.current.find((d) => d.id === docId);
+      if (!cur || cur.dirty) return;
       try {
-        const m = await invoke<number>("file_mtime", { path: filePath });
-        if (lastMtime.current != null && m !== lastMtime.current) {
-          lastMtime.current = m;
-          const text = await invoke<string>("read_file", { path: filePath });
-          setSource(text);
-          setDirty(false);
+        const m = await invoke<number>("file_mtime", { path });
+        if (cur.mtime != null && m !== cur.mtime) {
+          const text = await invoke<string>("read_file", { path });
+          patchDocById(docId, { source: text, dirty: false, mtime: m });
         }
       } catch {
         /* file may be mid-write or removed */
       }
     }, 1200);
-    return () => clearInterval(id);
-  }, [filePath]);
+    return () => clearInterval(timer);
+  }, [active.id, active.path, patchDocById]);
 
   // ----- Drag a file onto the window to open it -----
   useEffect(() => {
@@ -340,6 +428,7 @@ function App() {
           reloadFile();
           break;
         case "toggle_mode":
+          setCompare(null);
           setMode((m) => (m === "preview" ? "edit" : "preview"));
           break;
         case "toggle_sidebar":
@@ -379,7 +468,6 @@ function App() {
     ],
   );
 
-  // Menu clicks/accelerators and macOS "open with" arrive as events.
   useEffect(() => {
     const unlisteners = [
       listen<string>("menu", (e) => handleMenu(e.payload)),
@@ -392,7 +480,6 @@ function App() {
     };
   }, [handleMenu, openPath]);
 
-  // Open a file passed on the command line (Windows/Linux "open with").
   useEffect(() => {
     invoke<string | null>("cli_file_arg")
       .then((p) => {
@@ -401,7 +488,6 @@ function App() {
       .catch(() => {});
   }, [openPath]);
 
-  // Check for updates on launch (silently no-ops without a reachable endpoint).
   useEffect(() => {
     check()
       .then((update) => {
@@ -416,6 +502,14 @@ function App() {
       if (!(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
       switch (key) {
+        case "t":
+          e.preventDefault();
+          newDoc();
+          break;
+        case "w":
+          e.preventDefault();
+          closeTab(activeIdRef.current);
+          break;
         case "r":
           e.preventDefault();
           reloadFile();
@@ -460,6 +554,8 @@ function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [
+    newDoc,
+    closeTab,
     reloadFile,
     mode,
     prefs.toggleSidebar,
@@ -469,6 +565,10 @@ function App() {
     wrapSelection,
     insertLink,
   ]);
+
+  const tabs = docs.map((d) => ({ id: d.id, name: docName(d), dirty: d.dirty }));
+  const docA = compare ? docs.find((d) => d.id === compare.aId) : undefined;
+  const docB = compare ? docs.find((d) => d.id === compare.bId) : undefined;
 
   return (
     <div className="app">
@@ -489,11 +589,31 @@ function App() {
         </div>
 
         <div className="toolbar-group segmented">
-          <button className={mode === "preview" ? "active" : ""} onClick={() => setMode("preview")}>
+          <button
+            className={!compare && mode === "preview" ? "active" : ""}
+            onClick={() => {
+              setCompare(null);
+              setMode("preview");
+            }}
+          >
             Preview
           </button>
-          <button className={mode === "edit" ? "active" : ""} onClick={() => setMode("edit")}>
+          <button
+            className={!compare && mode === "edit" ? "active" : ""}
+            onClick={() => {
+              setCompare(null);
+              setMode("edit");
+            }}
+          >
             Edit
+          </button>
+          <button
+            className={compare ? "active" : ""}
+            onClick={startCompare}
+            disabled={docs.length < 2}
+            title="Compare two open files"
+          >
+            Compare
           </button>
         </div>
 
@@ -513,11 +633,7 @@ function App() {
           <button className="icon-btn" onClick={prefs.zoomOut} title="Zoom out (⌘-)">
             −
           </button>
-          <button
-            className="icon-btn zoom-label"
-            onClick={prefs.zoomReset}
-            title="Reset zoom (⌘0)"
-          >
+          <button className="icon-btn zoom-label" onClick={prefs.zoomReset} title="Reset zoom (⌘0)">
             {Math.round(prefs.zoom * 100)}%
           </button>
           <button className="icon-btn" onClick={prefs.zoomIn} title="Zoom in (⌘+)">
@@ -556,85 +672,125 @@ function App() {
         )}
 
         <div className="main-col">
-          {mode === "edit" && (
-            <div className="format-bar">
-              <button className="fmt fmt-b" title="Bold (⌘B)" onClick={() => wrapSelection("**", "**", "bold")}>
-                B
-              </button>
-              <button className="fmt fmt-i" title="Italic (⌘I)" onClick={() => wrapSelection("*", "*", "italic")}>
-                I
-              </button>
-              <button className="fmt fmt-s" title="Strikethrough" onClick={() => wrapSelection("~~", "~~", "text")}>
-                S
-              </button>
-              <span className="sep" />
-              <button className="fmt" title="Heading 1" onClick={() => prefixLines("# ")}>
-                H1
-              </button>
-              <button className="fmt" title="Heading 2" onClick={() => prefixLines("## ")}>
-                H2
-              </button>
-              <button className="fmt" title="Heading 3" onClick={() => prefixLines("### ")}>
-                H3
-              </button>
-              <span className="sep" />
-              <button className="fmt" title="Bulleted list" onClick={() => prefixLines("- ")}>
-                • List
-              </button>
-              <button className="fmt" title="Numbered list" onClick={() => prefixLines("1. ")}>
-                1. List
-              </button>
-              <button className="fmt" title="Task list" onClick={() => prefixLines("- [ ] ")}>
-                ☐ Task
-              </button>
-              <button className="fmt" title="Blockquote" onClick={() => prefixLines("> ")}>
-                ❝ Quote
-              </button>
-              <span className="sep" />
-              <button className="fmt" title="Inline code" onClick={() => wrapSelection("`", "`", "code")}>
-                {"</>"}
-              </button>
-              <button className="fmt" title="Code block" onClick={insertCodeBlock}>
-                { } Block
-              </button>
-              <button className="fmt" title="Link (⌘K)" onClick={insertLink}>
-                🔗 Link
+          <TabBar
+            tabs={tabs}
+            activeId={activeId}
+            onSelect={selectTab}
+            onClose={closeTab}
+            onNew={newDoc}
+          />
+
+          {compare ? (
+            <div className="compare-bar">
+              <select
+                value={compare.aId}
+                onChange={(e) => setCompare((c) => c && { ...c, aId: e.target.value })}
+              >
+                {docs.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {docName(d)}
+                  </option>
+                ))}
+              </select>
+              <span className="compare-vs">↔</span>
+              <select
+                value={compare.bId}
+                onChange={(e) => setCompare((c) => c && { ...c, bId: e.target.value })}
+              >
+                {docs.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {docName(d)}
+                  </option>
+                ))}
+              </select>
+              <span className="spacer" />
+              <button className="fmt" onClick={() => setCompare(null)}>
+                Close compare
               </button>
             </div>
+          ) : (
+            mode === "edit" && (
+              <div className="format-bar">
+                <button className="fmt fmt-b" title="Bold (⌘B)" onClick={() => wrapSelection("**", "**", "bold")}>
+                  B
+                </button>
+                <button className="fmt fmt-i" title="Italic (⌘I)" onClick={() => wrapSelection("*", "*", "italic")}>
+                  I
+                </button>
+                <button className="fmt fmt-s" title="Strikethrough" onClick={() => wrapSelection("~~", "~~", "text")}>
+                  S
+                </button>
+                <span className="sep" />
+                <button className="fmt" title="Heading 1" onClick={() => prefixLines("# ")}>
+                  H1
+                </button>
+                <button className="fmt" title="Heading 2" onClick={() => prefixLines("## ")}>
+                  H2
+                </button>
+                <button className="fmt" title="Heading 3" onClick={() => prefixLines("### ")}>
+                  H3
+                </button>
+                <span className="sep" />
+                <button className="fmt" title="Bulleted list" onClick={() => prefixLines("- ")}>
+                  • List
+                </button>
+                <button className="fmt" title="Numbered list" onClick={() => prefixLines("1. ")}>
+                  1. List
+                </button>
+                <button className="fmt" title="Task list" onClick={() => prefixLines("- [ ] ")}>
+                  ☐ Task
+                </button>
+                <button className="fmt" title="Blockquote" onClick={() => prefixLines("> ")}>
+                  ❝ Quote
+                </button>
+                <span className="sep" />
+                <button className="fmt" title="Inline code" onClick={() => wrapSelection("`", "`", "code")}>
+                  {"</>"}
+                </button>
+                <button className="fmt" title="Code block" onClick={insertCodeBlock}>
+                  { } Block
+                </button>
+                <button className="fmt" title="Link (⌘K)" onClick={insertLink}>
+                  🔗 Link
+                </button>
+              </div>
+            )
           )}
 
-          {findOpen && mode === "preview" && (
+          {findOpen && !compare && mode === "preview" && (
             <FindBar container={contentRef.current} onClose={() => setFindOpen(false)} />
           )}
 
           <main className="content" ref={contentRef}>
-            {mode === "preview" ? (
+            {compare ? (
+              <DiffView a={docA?.source ?? ""} b={docB?.source ?? ""} dark={prefs.dark} />
+            ) : mode === "preview" ? (
               <div className="markdown-body">
                 <Preview source={source} dark={prefs.dark} onToggleTask={toggleTask} />
               </div>
             ) : (
               <CodeMirror
+                key={active.id}
                 ref={cmRef}
                 className="editor"
                 value={source}
                 height="100%"
                 theme={prefs.dark ? "dark" : "light"}
                 extensions={[markdown(), search()]}
-                onChange={(value) => {
-                  setSource(value);
-                  setDirty(true);
-                }}
+                onChange={(value) => patchDocById(active.id, { source: value, dirty: true })}
               />
             )}
           </main>
 
           <footer className="status-bar">
             <span>
-              {basename(filePath)}
-              {dirty ? " •" : ""}
+              {compare
+                ? `Comparing ${docName(docA ?? active)} ↔ ${docName(docB ?? active)}`
+                : `${docName(active)}${dirty ? " •" : ""}`}
             </span>
             <span>
-              {wordCount} words · {readMin} min read{mode === "edit" ? " · Edit" : ""}
+              {wordCount} words · {readMin} min read
+              {compare ? " · Compare" : mode === "edit" ? " · Edit" : ""}
             </span>
           </footer>
         </div>

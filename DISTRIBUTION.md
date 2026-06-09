@@ -94,9 +94,9 @@ The workflow builds every platform, creates a **draft** GitHub Release with the 
 
 | Secret | Needed for | Status |
 | ------ | ---------- | ------ |
-| `TAURI_SIGNING_PRIVATE_KEY` | Signing auto-update artifacts | ✅ set from `~/.tauri/markdown-viewer.key` |
+| `TAURI_SIGNING_PRIVATE_KEY` | Signing auto-update artifacts | ✅ set |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Same (empty if the key has no password) | optional |
-| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS signing | ⬜ add when ready |
-| `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | macOS notarization | ⬜ add when ready |
+| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS Developer ID signing | ✅ set |
+| `APPLE_API_ISSUER` / `APPLE_API_KEY` / `APPLE_API_KEY_BASE64` | macOS notarization (App Store Connect API key) | ✅ set |
 
-Until the Apple secrets are added, macOS builds are produced **unsigned** (still installable, but Gatekeeper will warn). Everything else works out of the box. To enable signing later, add the secrets **and** uncomment the `APPLE_*` block in `.github/workflows/release.yml` — leaving those env vars set-but-empty makes the macOS codesign step fail.
+macOS builds are signed with the Developer ID certificate and notarized via the App Store Connect API key. The workflow decodes `APPLE_API_KEY_BASE64` into a `.p8` on the runner and points `APPLE_API_KEY_PATH` at it, so downloaded `.dmg`s open with a normal double-click — no Gatekeeper warning. The signing `.p12` was exported from Keychain and stored only as the encrypted `APPLE_CERTIFICATE` secret.

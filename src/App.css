@@ -645,3 +645,102 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* ---------- Tabs ---------- */
+.tab-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 8px 0;
+  border-bottom: 1px solid var(--hairline);
+  overflow-x: auto;
+  flex: 0 0 auto;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 200px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--hairline);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.tab.active {
+  background: var(--reading-bg);
+  color: var(--text);
+}
+.tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-dot {
+  color: var(--accent);
+}
+.tab-close {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 4px;
+  opacity: 0.55;
+}
+.tab-close:hover {
+  opacity: 1;
+  background: var(--panel-strong);
+}
+.tab-new {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0 8px;
+}
+.tab-new:hover {
+  color: var(--text);
+}
+
+/* ---------- Compare bar + diff view ---------- */
+.compare-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--hairline);
+  flex: 0 0 auto;
+}
+.compare-bar select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 4px 8px;
+  max-width: 240px;
+}
+.compare-vs {
+  color: var(--text-muted);
+}
+
+.diff-view {
+  height: 100%;
+  overflow: hidden;
+}
+.diff-view .cm-mergeView,
+.diff-view .cm-mergeView .cm-editor {
+  height: 100%;
+}
+.diff-view .cm-scroller {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 13px;
+}
