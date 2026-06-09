@@ -73,3 +73,30 @@ The updater plugin is wired in. To enable real updates:
    GitHub Releases works well: upload the bundles + `latest.json` and point the endpoint at the release asset URL. The app checks this on launch (see `checkForUpdate()` in the frontend).
 
 3. `tauri build` emits the signed update artifacts (`.tar.gz` + `.sig`) automatically once the key env vars are set.
+
+The updater endpoint is set to `https://github.com/appoly/markappoly/releases/latest/download/latest.json`, which the release CI (below) publishes automatically.
+
+## 5. Continuous releases (GitHub Actions)
+
+`.github/workflows/release.yml` builds and publishes installers for macOS (Apple Silicon + Intel), Windows, and Linux whenever you push a version tag.
+
+**Cut a release:**
+
+```bash
+# bump "version" in src-tauri/tauri.conf.json (e.g. 0.2.0), commit, then:
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The workflow builds every platform, creates a **draft** GitHub Release with the installers attached, and (when the signing key secret is set) attaches the updater `latest.json`. Review the draft and publish it.
+
+**Required repo secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Needed for | Status |
+| ------ | ---------- | ------ |
+| `TAURI_SIGNING_PRIVATE_KEY` | Signing auto-update artifacts | ✅ set from `~/.tauri/markdown-viewer.key` |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Same (empty if the key has no password) | optional |
+| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS signing | ⬜ add when ready |
+| `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | macOS notarization | ⬜ add when ready |
+
+Until the Apple secrets are added, macOS builds are produced **unsigned** (still installable, but Gatekeeper will warn). Everything else works out of the box.

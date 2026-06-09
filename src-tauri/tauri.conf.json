@@ -50,7 +50,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ3QzZGRjJBOTZFMDY1MjIKUldRaVplQ1dLdi9HMS9JWVBkM2FhT1BXbkVhNHJoUnlSVkNiUzVkWFduNU41WmVMR1hlMGhJSEcK",
       "endpoints": [
-        "https://example.com/updates/{{target}}-{{arch}}/{{current_version}}"
+        "https://github.com/appoly/markappoly/releases/latest/download/latest.json"
       ]
     }
   }
