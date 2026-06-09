@@ -99,4 +99,4 @@ The workflow builds every platform, creates a **draft** GitHub Release with the 
 | `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | macOS signing | ⬜ add when ready |
 | `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | macOS notarization | ⬜ add when ready |
 
-Until the Apple secrets are added, macOS builds are produced **unsigned** (still installable, but Gatekeeper will warn). Everything else works out of the box.
+Until the Apple secrets are added, macOS builds are produced **unsigned** (still installable, but Gatekeeper will warn). Everything else works out of the box. To enable signing later, add the secrets **and** uncomment the `APPLE_*` block in `.github/workflows/release.yml` — leaving those env vars set-but-empty makes the macOS codesign step fail.
