@@ -3,9 +3,11 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import remarkFrontmatter from "remark-frontmatter";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeKatex from "rehype-katex";
 import rehypeSlug from "rehype-slug";
 import rehypeHighlight from "rehype-highlight";
+import type { PluggableList } from "unified";
 import GithubSlugger from "github-slugger";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Mermaid } from "./Mermaid";
@@ -33,8 +35,43 @@ export function extractHeadings(source: string): Heading[] {
   return headings;
 }
 
+// Sanitize untrusted HTML embedded in the Markdown. This strips <script>, event
+// handlers (onerror/onload/…), javascript: URLs, etc. KaTeX, syntax highlighting
+// and heading slugs run AFTER this step, so their generated markup is trusted and
+// preserved; only author-supplied raw HTML is filtered.
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames ?? []),
+    "input", // task-list checkboxes
+    "details",
+    "summary",
+    "kbd",
+    "mark",
+    "section",
+    "figure",
+    "figcaption",
+  ],
+  attributes: {
+    ...defaultSchema.attributes,
+    // className is safe (cannot execute) and is needed so the math/code markers
+    // survive to the KaTeX/highlight steps that run after sanitization.
+    "*": [...(defaultSchema.attributes?.["*"] ?? []), "className"],
+    input: ["type", "checked", "disabled"],
+  },
+};
+
 const remarkPlugins = [remarkGfm, remarkMath, remarkFrontmatter];
-const rehypePlugins = [rehypeRaw, rehypeKatex, rehypeSlug, rehypeHighlight];
+const rehypePlugins: PluggableList = [
+  rehypeRaw,
+  [rehypeSanitize, sanitizeSchema],
+  rehypeKatex,
+  rehypeSlug,
+  rehypeHighlight,
+];
+
+// Only open links with safe schemes externally; ignore file:, javascript:, etc.
+const SAFE_LINK = /^(https?:|mailto:)/i;
 
 type PreviewProps = {
   source: string;
@@ -82,7 +119,7 @@ export function Preview({ source, dark, onToggleTask }: PreviewProps) {
               document
                 .getElementById(url.slice(1))
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
-            } else if (url) {
+            } else if (SAFE_LINK.test(url)) {
               openUrl(url).catch(() => {});
             }
           }}

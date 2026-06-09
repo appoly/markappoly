@@ -13,7 +13,7 @@ export function Mermaid({ code, dark }: { code: string; dark: boolean }) {
     mermaid.initialize({
       startOnLoad: false,
       theme: dark ? "dark" : "default",
-      securityLevel: "loose",
+      securityLevel: "strict",
     });
     const id = `mermaid-${counter++}`;
     mermaid
