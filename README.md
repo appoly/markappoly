@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/appoly/markappoly/releases/latest"><img src="https://img.shields.io/github/v/release/appoly/markappoly?label=download&color=2ea44f" alt="Latest release" /></a>
+  <a href="https://github.com/appoly/markappoly/wiki"><img src="https://img.shields.io/badge/docs-user%20manual-blue" alt="User manual" /></a>
   <img src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-informational" alt="Platforms" />
   <a href="LICENSE"><img src="https://img.shields.io/github/license/appoly/markappoly" alt="License" /></a>
 </p>
@@ -49,6 +50,8 @@ After the first launch the app keeps itself up to date: when a new version ships
 **Export:** Text, HTML, JSON (AST), **Word (.docx)**, and PDF.
 
 **Native polish:** frosted vibrancy on macOS and acrylic on Windows, system/light/dark themes, a native menu bar, drag-and-drop, "open with" file association, and a window that reopens where you left it.
+
+For a walkthrough of every feature, see the **[user manual](https://github.com/appoly/markappoly/wiki)**.
 
 ## Keyboard shortcuts
 
