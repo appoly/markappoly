@@ -345,7 +345,12 @@ function App() {
         /* ignore */
       }
       const doc = makeDoc({ path, source: text, dirty: false, mtime });
-      setDocs((ds) => [...ds, doc]);
+      setDocs((ds) => {
+        // Replace a single untouched welcome tab so opening a file doesn't leave it behind.
+        const onlyWelcome =
+          ds.length === 1 && ds[0].path === null && !ds[0].dirty && ds[0].source === WELCOME;
+        return onlyWelcome ? [doc] : [...ds, doc];
+      });
       setActiveId(doc.id);
       setCompare(null);
       setMode("preview");
@@ -810,6 +815,10 @@ function App() {
       .then((p) => {
         if (p) openPath(p);
       })
+      .catch(() => {});
+    // Files macOS delivered before the window was ready (cold-start "open with").
+    invoke<string[]>("take_pending_open")
+      .then((paths) => paths.forEach((p) => openPath(p)))
       .catch(() => {});
   }, [openPath]);
 

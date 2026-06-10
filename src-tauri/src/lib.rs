@@ -2,6 +2,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{AboutMetadata, Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -92,6 +93,19 @@ fn cli_file_arg() -> Option<String> {
                 .map(|e| MD_EXTS.contains(&e.to_lowercase().as_str()))
                 .unwrap_or(false)
     })
+}
+
+/// Files macOS asked us to open (Finder double-click / "open with") via the
+/// `Opened` event. On a cold launch that event fires before the webview has
+/// registered its listener, so the path is buffered here and drained by the
+/// frontend on startup instead of being lost to the race.
+#[derive(Default)]
+struct PendingOpen(Mutex<Vec<String>>);
+
+#[tauri::command]
+fn take_pending_open(state: tauri::State<PendingOpen>) -> Vec<String> {
+    let mut pending = state.0.lock().unwrap();
+    std::mem::take(&mut *pending)
 }
 
 // ---------- Folder-wide search ----------
@@ -452,6 +466,7 @@ pub fn run() {
     }
 
     let app = builder
+        .manage(PendingOpen::default())
         .on_menu_event(|app, event| {
             let _ = app.emit("menu", event.id().0.clone());
         })
@@ -489,6 +504,7 @@ pub fn run() {
             file_mtime,
             list_markdown_dir,
             cli_file_arg,
+            take_pending_open,
             search_dir,
             save_image,
             attach_image_file,
@@ -505,9 +521,15 @@ pub fn run() {
         // macOS delivers "open with" / Finder double-clicks as Opened events.
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Opened { urls } = &event {
+            let pending = app_handle.state::<PendingOpen>();
             for url in urls {
                 if let Ok(path) = url.to_file_path() {
-                    let _ = app_handle.emit("open-file", path.to_string_lossy().to_string());
+                    let p = path.to_string_lossy().to_string();
+                    // Buffer it for the cold-start drain AND emit for a window
+                    // that is already up. openPath de-dupes, so either or both
+                    // firing is fine.
+                    pending.0.lock().unwrap().push(p.clone());
+                    let _ = app_handle.emit("open-file", p);
                 }
             }
         }
