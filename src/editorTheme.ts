@@ -3,36 +3,28 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 
 /**
- * Source-editor chrome driven by the app's own CSS variables, so the editor
- * always matches the current light or dark reading surface. The built-in
- * CodeMirror themes hard-code their colors: the dark one (oneDark) paints
- * light-gray text, which became invisible once it landed on the light reading
- * surface. Deriving everything from `--text` and friends keeps text legible in
- * both modes and makes the editor feel like part of the app.
+ * Editor colours driven by the app's CSS variables, so text stays legible in
+ * both light and dark (the built-in CodeMirror themes hard-code colours that
+ * went invisible on the light reading surface). This theme deliberately sets
+ * NO geometry — no height, no line-height, no vertical padding on .cm-content —
+ * because those can desync the line-number gutter from the text in WKWebView.
+ * Layout is left to CodeMirror's own defaults.
  */
 export const editorTheme = EditorView.theme({
   "&": {
     color: "var(--text)",
     backgroundColor: "transparent",
-    height: "100%",
   },
   ".cm-scroller": {
     fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
-    lineHeight: "1.7",
   },
   ".cm-content": {
-    padding: "20px 0 80px",
     caretColor: "var(--accent)",
   },
-  ".cm-line": {
-    padding: "0 18px",
-  },
-  "&.cm-focused": { outline: "none" },
-  "&.cm-focused .cm-cursor": {
+  ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--accent)",
-    borderLeftWidth: "2px",
   },
-  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
     backgroundColor: "var(--selection)",
   },
   ".cm-gutters": {
@@ -40,13 +32,14 @@ export const editorTheme = EditorView.theme({
     color: "var(--text-muted)",
     border: "none",
   },
-  ".cm-lineNumbers .cm-gutterElement": {
-    padding: "0 8px 0 16px",
+  ".cm-activeLine": {
+    backgroundColor: "var(--code-bg)",
   },
-  ".cm-activeLine": { backgroundColor: "var(--code-bg)" },
   ".cm-activeLineGutter": {
     backgroundColor: "var(--code-bg)",
-    color: "var(--text)",
+  },
+  ".cm-line": {
+    padding: "0 14px",
   },
 });
 

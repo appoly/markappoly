@@ -180,6 +180,13 @@ function EditorPane({
       basicSetup={{ foldGutter: false, syntaxHighlighting: false }}
       extensions={[markdown(), search(), ...EDITOR_BASE, ...extra]}
       onChange={onChange}
+      onCreateEditor={(view) => {
+        // WKWebView can lay the gutter out before the container has its final
+        // size, stacking line numbers above the text. Re-measure once layout
+        // has settled so the gutter sits beside the content.
+        requestAnimationFrame(() => view.requestMeasure());
+        setTimeout(() => view.requestMeasure(), 60);
+      }}
     />
   );
 }
