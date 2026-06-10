@@ -39,15 +39,17 @@ After the first launch the app keeps itself up to date: when a new version ships
 
 **Reading**
 - Formatted preview by default, with GitHub-flavored Markdown: tables, task lists, strikethrough
-- Syntax-highlighted code, **KaTeX math**, and **Mermaid diagrams**
-- Outline sidebar and folder browser, find-in-document (⌘F), word count and reading time
-- Live reload when the file changes on disk
+- Syntax-highlighted code, **KaTeX math**, **Mermaid diagrams**, and GitHub-style alerts (`> [!NOTE]`)
+- Outline sidebar and folder browser, find-in-document (⌘F), and search across a whole folder
+- Open Recent, word count and reading time, live reload when the file changes on disk
+- **Present mode** (⌘⇧P): turn the document into slides, split on `---`
 
 **Editing**
-- One key flips between the preview and a CodeMirror source editor with a formatting toolbar
+- Toggle to a CodeMirror source editor with a formatting toolbar, or a **split view** (⌘⇧E) with editor and preview side by side, scrolling together
+- Paste or drag an image into the editor to attach it next to the document
 - Tick a checkbox in the preview and it writes the change back to the source
 
-**Export:** Text, HTML, JSON (AST), **Word (.docx)**, and PDF.
+**Export:** Text, HTML, JSON (AST), **Word (.docx)**, and PDF, plus **Copy as HTML** for pasting rich text elsewhere. With [Pandoc](https://pandoc.org) installed, also RTF, EPUB, LaTeX, and Pandoc-rendered Word and PDF.
 
 **Native polish:** frosted vibrancy on macOS and acrylic on Windows, system/light/dark themes, a native menu bar, drag-and-drop, "open with" file association, and a window that reopens where you left it.
 
@@ -59,8 +61,9 @@ For a walkthrough of every feature, see the **[user manual](https://github.com/a
 | ------ | -------- | ------ | -------- |
 | Open | ⌘O | Find | ⌘F |
 | Open folder | ⌘⇧O | Toggle edit/preview | ⌘E |
-| Save | ⌘S | Toggle sidebar | ⌘\ |
-| Reload from disk | ⌘R | Zoom | ⌘+ / ⌘- / ⌘0 |
+| Save | ⌘S | Split view | ⌘⇧E |
+| Reload from disk | ⌘R | Present | ⌘⇧P |
+| Toggle sidebar | ⌘\ | Zoom | ⌘+ / ⌘- / ⌘0 |
 | Bold / Italic | ⌘B / ⌘I | Link | ⌘K |
 
 ## Build from source

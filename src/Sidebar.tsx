@@ -1,24 +1,60 @@
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { Heading } from "./markdown";
 
 export type FileEntry = { name: string; path: string };
+type SearchHit = { path: string; name: string; line: number; text: string };
 
 export function Sidebar({
   files,
   folderName,
+  folderPath,
   activePath,
   onOpenFile,
   onOpenFolder,
+  onOpenAtLine,
   headings,
   onGotoHeading,
 }: {
   files: FileEntry[];
   folderName: string | null;
+  folderPath: string | null;
   activePath: string | null;
   onOpenFile: (path: string) => void;
   onOpenFolder: () => void;
+  onOpenAtLine: (path: string, line: number) => void;
   headings: Heading[];
   onGotoHeading: (h: Heading) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (!folderPath || query.trim() === "") {
+      setHits([]);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await invoke<SearchHit[]>("search_dir", { path: folderPath, query });
+        if (!cancelled) setHits(res);
+      } catch {
+        if (!cancelled) setHits([]);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [folderPath, query]);
+
+  const searchActive = !!folderPath && query.trim() !== "";
+
   return (
     <aside className="sidebar">
       <div className="sidebar-section">
@@ -28,7 +64,39 @@ export function Sidebar({
             Open Folder…
           </button>
         </div>
-        {files.length === 0 ? (
+
+        {folderPath && (
+          <input
+            className="sidebar-search"
+            placeholder="Search this folder…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        )}
+
+        {searchActive ? (
+          hits.length === 0 ? (
+            <div className="sidebar-empty">{searching ? "Searching…" : "No matches"}</div>
+          ) : (
+            <ul className="file-list">
+              {hits.map((h, i) => (
+                <li key={`${h.path}:${h.line}:${i}`}>
+                  <button
+                    className="search-hit"
+                    onClick={() => onOpenAtLine(h.path, h.line)}
+                    title={`${h.name}:${h.line}`}
+                  >
+                    <span className="search-hit-file">
+                      {h.name}
+                      <span className="search-hit-line">:{h.line}</span>
+                    </span>
+                    <span className="search-hit-text">{h.text}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : files.length === 0 ? (
           <div className="sidebar-empty">No folder open</div>
         ) : (
           <ul className="file-list">

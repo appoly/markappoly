@@ -1,6 +1,6 @@
 [package]
 name = "markdown-viewer"
-version = "0.3.3"
+version = "0.4.0"
 description = "A fast, cross-platform Markdown viewer and editor built with Tauri."
 authors = ["Appoly Ltd"]
 edition = "2021"
@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["protocol-asset", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 window-vibrancy = "0.6"

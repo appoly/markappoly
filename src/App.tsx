@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open, save, ask } from "@tauri-apps/plugin-dialog";
+import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
@@ -9,12 +9,14 @@ import CodeMirror, { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { search, openSearchPanel } from "@codemirror/search";
 import { EditorView } from "@codemirror/view";
+import type { Extension } from "@codemirror/state";
 import { editorTheme, editorHighlight } from "./editorTheme";
 import { Preview, extractHeadings, type Heading } from "./markdown";
 import { FindBar } from "./FindBar";
 import { Sidebar, type FileEntry } from "./Sidebar";
 import { TabBar } from "./TabBar";
 import { DiffView } from "./DiffView";
+import { PresentView } from "./PresentView";
 import { usePreferences, type ThemePref } from "./prefs";
 import {
   markdownToHtml,
@@ -24,7 +26,7 @@ import {
 } from "./export";
 import "./App.css";
 
-type Mode = "preview" | "edit";
+type Mode = "preview" | "edit" | "split";
 type ExportKind = "txt" | "html" | "json" | "docx" | "pdf";
 
 type Doc = {
@@ -36,6 +38,14 @@ type Doc = {
 };
 
 const MD_EXTENSIONS = ["md", "markdown", "mdown", "mkd", "mkdn", "txt"];
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
+const PANDOC_FORMATS = [
+  { ext: "docx", label: "Word via Pandoc (.docx)" },
+  { ext: "pdf", label: "PDF via Pandoc (.pdf)" },
+  { ext: "rtf", label: "Rich Text (.rtf)" },
+  { ext: "epub", label: "EPUB (.epub)" },
+  { ext: "tex", label: "LaTeX (.tex)" },
+];
 
 const WELCOME = `# Welcome to Markappoly
 
@@ -47,7 +57,8 @@ You're looking at a live preview. Press **⌘E** to open the editor and again to
 
 Markappoly speaks **GitHub-Flavored Markdown**: **bold**, *italic*, ~~strikethrough~~, \`inline code\`, and [links](https://github.com/appoly/markappoly).
 
-> Blockquotes look like this, handy for notes and asides.
+> [!TIP]
+> Press **⌘⇧E** for a split view with the editor and this preview side by side, scrolling together.
 
 ### Lists and tasks
 
@@ -66,8 +77,9 @@ Markappoly speaks **GitHub-Flavored Markdown**: **bold**, *italic*, ~~strikethro
 | -------------- | -------- | ------------------------------ |
 | Open file      | ⌘O       | or drag a file onto the window |
 | Edit / preview | ⌘E       | toggle back and forth          |
+| Split view     | ⌘⇧E      | editor and preview together    |
 | Find           | ⌘F       | search the open document       |
-| Export         | menu     | Text, HTML, JSON, Word, PDF    |
+| Present        | ⌘⇧P      | slides split on \`---\`          |
 
 ## Code
 
@@ -106,8 +118,9 @@ flowchart LR
 ### Do more
 
 - Open several files as **tabs**, then **Compare** two of them side by side
-- Browse a whole folder from the sidebar with **⌘⇧O**
-- Use the outline on the left to jump around long documents
+- Browse a whole folder from the sidebar (**⌘⇧O**) and search across all of it
+- Paste or drag an image into the editor to attach it
+- Export to Word and PDF, or to more formats when Pandoc is installed
 
 New here? The full guide lives in the [user manual](https://github.com/appoly/markappoly/wiki).
 
@@ -117,6 +130,12 @@ New here? The full guide lives in the [user manual](https://github.com/appoly/ma
 function basename(path: string | null): string {
   if (!path) return "Untitled";
   return path.split(/[\\/]/).pop() ?? "Untitled";
+}
+
+function dirOf(path: string | null): string | undefined {
+  if (!path) return undefined;
+  const cut = path.replace(/[\\/][^\\/]*$/, "");
+  return cut === path ? undefined : cut;
 }
 
 function docName(d: Doc): string {
@@ -134,6 +153,95 @@ function makeDoc(partial: Partial<Doc> = {}): Doc {
   };
 }
 
+const EDITOR_BASE: Extension[] = [editorTheme, editorHighlight, EditorView.lineWrapping];
+
+/** The CodeMirror source editor, shared by the Edit and Split views. */
+function EditorPane({
+  docId,
+  value,
+  cmRef,
+  extra,
+  onChange,
+}: {
+  docId: string;
+  value: string;
+  cmRef: React.RefObject<ReactCodeMirrorRef | null>;
+  extra: Extension[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <CodeMirror
+      key={docId}
+      ref={cmRef}
+      className="editor"
+      value={value}
+      height="100%"
+      theme="none"
+      basicSetup={{ foldGutter: false, syntaxHighlighting: false }}
+      extensions={[markdown(), search(), ...EDITOR_BASE, ...extra]}
+      onChange={onChange}
+    />
+  );
+}
+
+/** Editor and live preview side by side, with linked scrolling. */
+function SplitView({
+  docId,
+  value,
+  cmRef,
+  extra,
+  onChange,
+  dark,
+  basePath,
+  onToggleTask,
+}: {
+  docId: string;
+  value: string;
+  cmRef: React.RefObject<ReactCodeMirrorRef | null>;
+  extra: Extension[];
+  onChange: (v: string) => void;
+  dark: boolean;
+  basePath?: string;
+  onToggleTask: (i: number) => void;
+}) {
+  const previewRef = useRef<HTMLDivElement>(null);
+  const lock = useRef(false);
+
+  useEffect(() => {
+    const scroller = cmRef.current?.view?.scrollDOM;
+    const preview = previewRef.current;
+    if (!scroller || !preview) return;
+    const sync = (from: HTMLElement, to: HTMLElement) => {
+      if (lock.current) return;
+      lock.current = true;
+      const max = Math.max(1, from.scrollHeight - from.clientHeight);
+      to.scrollTop = (from.scrollTop / max) * (to.scrollHeight - to.clientHeight);
+      requestAnimationFrame(() => (lock.current = false));
+    };
+    const onEditor = () => sync(scroller, preview);
+    const onPreview = () => sync(preview, scroller);
+    scroller.addEventListener("scroll", onEditor);
+    preview.addEventListener("scroll", onPreview);
+    return () => {
+      scroller.removeEventListener("scroll", onEditor);
+      preview.removeEventListener("scroll", onPreview);
+    };
+  }, [cmRef, docId]);
+
+  return (
+    <div className="split">
+      <div className="split-pane split-editor">
+        <EditorPane docId={docId} value={value} cmRef={cmRef} extra={extra} onChange={onChange} />
+      </div>
+      <div className="split-pane split-preview" ref={previewRef}>
+        <div className="markdown-body">
+          <Preview source={value} dark={dark} basePath={basePath} onToggleTask={onToggleTask} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const prefs = usePreferences();
   const first = useRef<Doc | null>(null);
@@ -146,12 +254,16 @@ function App() {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [folderPath, setFolderPath] = useState<string | null>(null);
   const [findOpen, setFindOpen] = useState(false);
+  const [presenting, setPresenting] = useState(false);
+  const [pandocOk, setPandocOk] = useState(false);
 
   // Always-fresh references so stable callbacks can read current state.
   const docsRef = useRef(docs);
   docsRef.current = docs;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -160,6 +272,7 @@ function App() {
   const source = active.source;
   const dirty = active.dirty;
   const filePath = active.path;
+  const baseDir = useMemo(() => dirOf(filePath), [filePath]);
 
   const headings = useMemo(() => extractHeadings(source), [source]);
   const wordCount = useMemo(() => (source.trim().match(/\S+/g) || []).length, [source]);
@@ -229,10 +342,27 @@ function App() {
       setActiveId(doc.id);
       setCompare(null);
       setMode("preview");
+      invoke("push_recent", { path }).catch(() => {});
     } catch (e) {
       console.error("open failed", e);
     }
   }, []);
+
+  const openPathAtLine = useCallback(
+    async (path: string, line: number) => {
+      await openPath(path);
+      setMode("edit");
+      setTimeout(() => {
+        const view = cmRef.current?.view;
+        if (!view) return;
+        const n = Math.min(Math.max(1, line), view.state.doc.lines);
+        const pos = view.state.doc.line(n).from;
+        view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
+        view.focus();
+      }, 140);
+    },
+    [openPath],
+  );
 
   const openFile = useCallback(async () => {
     const selected = await open({
@@ -283,6 +413,7 @@ function App() {
       /* ignore */
     }
     patchDocById(doc.id, { path, dirty: false, mtime });
+    invoke("push_recent", { path }).catch(() => {});
   }, [getActive, patchDocById]);
 
   const exportAs = useCallback(
@@ -322,6 +453,117 @@ function App() {
     },
     [getActive],
   );
+
+  const exportPandoc = useCallback(
+    async (ext: string) => {
+      const doc = getActive();
+      const name = basename(doc.path).replace(/\.[^.]+$/, "") || "document";
+      const chosen = await save({
+        defaultPath: `${name}.${ext}`,
+        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+      });
+      if (!chosen) return;
+      try {
+        await invoke("export_pandoc", { src: doc.source, outPath: chosen });
+      } catch (e) {
+        await message(`Pandoc could not produce that file.\n\n${e}`, {
+          title: "Export failed",
+          kind: "error",
+        });
+      }
+    },
+    [getActive],
+  );
+
+  const copyAsHtml = useCallback(() => {
+    const html = markdownToHtml(getActive().source);
+    const holder = document.createElement("div");
+    holder.innerHTML = html;
+    holder.setAttribute("contenteditable", "true");
+    holder.style.position = "fixed";
+    holder.style.left = "-9999px";
+    holder.style.top = "0";
+    document.body.appendChild(holder);
+    const range = document.createRange();
+    range.selectNodeContents(holder);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    try {
+      document.execCommand("copy");
+    } catch {
+      /* clipboard unavailable */
+    }
+    sel?.removeAllRanges();
+    document.body.removeChild(holder);
+  }, [getActive]);
+
+  // ----- Image attachments (paste / drop into the editor) -----
+  const attachImage = useCallback(
+    async (
+      view: EditorView,
+      payload: { kind: "data"; data: string; ext: string } | { kind: "file"; source: string },
+    ) => {
+      const doc = getActive();
+      if (!doc.path) {
+        await message("Save the document first so images can be stored alongside it.", {
+          title: "Attach image",
+          kind: "warning",
+        });
+        return;
+      }
+      try {
+        const rel =
+          payload.kind === "data"
+            ? await invoke<string>("save_image", {
+                docPath: doc.path,
+                data: payload.data,
+                ext: payload.ext,
+              })
+            : await invoke<string>("attach_image_file", {
+                docPath: doc.path,
+                source: payload.source,
+              });
+        const { from, to } = view.state.selection.main;
+        const snippet = `![](${rel})`;
+        view.dispatch({ changes: { from, to, insert: snippet }, selection: { anchor: from + 2 } });
+        view.focus();
+      } catch (e) {
+        console.error("attach image failed", e);
+      }
+    },
+    [getActive],
+  );
+
+  const editorImageExt = useMemo(
+    () =>
+      EditorView.domEventHandlers({
+        paste: (event, view) => {
+          const items = event.clipboardData?.items;
+          if (!items) return false;
+          for (let idx = 0; idx < items.length; idx++) {
+            const it = items[idx];
+            if (it.kind === "file" && it.type.startsWith("image/")) {
+              const file = it.getAsFile();
+              if (!file) continue;
+              event.preventDefault();
+              const ext = it.type.split("/")[1] || "png";
+              const reader = new FileReader();
+              reader.onload = () => {
+                const result = String(reader.result);
+                const base64 = result.split(",")[1] ?? "";
+                attachImage(view, { kind: "data", data: base64, ext });
+              };
+              reader.readAsDataURL(file);
+              return true;
+            }
+          }
+          return false;
+        },
+      }),
+    [attachImage],
+  );
+  const editorExtras = useMemo(() => [editorImageExt], [editorImageExt]);
 
   // ----- Compare -----
   const startCompare = useCallback(() => {
@@ -409,7 +651,7 @@ function App() {
   // ----- Outline navigation -----
   const gotoHeading = useCallback(
     (h: Heading) => {
-      if (mode === "edit") {
+      if (mode === "edit" || mode === "split") {
         const view = cmRef.current?.view;
         if (view) {
           const n = Math.min(h.line + 1, view.state.doc.lines);
@@ -447,21 +689,27 @@ function App() {
     return () => clearInterval(timer);
   }, [active.id, active.path, patchDocById]);
 
-  // ----- Drag a file onto the window to open it -----
+  // ----- Drag a file onto the window: open Markdown, attach images -----
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     getCurrentWebview()
       .onDragDropEvent((event) => {
-        if (event.payload.type === "drop") {
-          const p = event.payload.paths?.[0];
-          if (p) openPath(p);
+        if (event.payload.type !== "drop") return;
+        const p = event.payload.paths?.[0];
+        if (!p) return;
+        const view = cmRef.current?.view;
+        const editing = modeRef.current === "edit" || modeRef.current === "split";
+        if (IMAGE_EXT.test(p) && editing && view && getActive().path) {
+          attachImage(view, { kind: "file", source: p });
+        } else {
+          openPath(p);
         }
       })
       .then((fn) => {
         unlisten = fn;
       });
     return () => unlisten?.();
-  }, [openPath]);
+  }, [openPath, attachImage, getActive]);
 
   // ----- Native menu events -----
   const handleMenu = useCallback(
@@ -482,6 +730,17 @@ function App() {
         case "toggle_mode":
           setCompare(null);
           setMode((m) => (m === "preview" ? "edit" : "preview"));
+          break;
+        case "toggle_split":
+          setCompare(null);
+          setMode((m) => (m === "split" ? "preview" : "split"));
+          break;
+        case "present":
+          setCompare(null);
+          setPresenting(true);
+          break;
+        case "copy_html":
+          copyAsHtml();
           break;
         case "toggle_sidebar":
           prefs.toggleSidebar();
@@ -504,6 +763,11 @@ function App() {
           break;
         default:
           if (id.startsWith("export:")) exportAs(id.slice(7) as ExportKind);
+          else if (id.startsWith("recent::")) {
+            const rest = id.slice("recent::".length);
+            if (rest === "clear") invoke("clear_recents").catch(() => {});
+            else if (rest !== "none") openPath(rest);
+          }
       }
     },
     [
@@ -512,6 +776,8 @@ function App() {
       saveFile,
       reloadFile,
       mode,
+      copyAsHtml,
+      openPath,
       prefs.toggleSidebar,
       prefs.zoomIn,
       prefs.zoomOut,
@@ -539,6 +805,10 @@ function App() {
       })
       .catch(() => {});
   }, [openPath]);
+
+  useEffect(() => {
+    invoke<boolean>("pandoc_available").then(setPandocOk).catch(() => {});
+  }, []);
 
   useEffect(() => {
     check()
@@ -591,19 +861,19 @@ function App() {
           prefs.zoomReset();
           break;
         case "b":
-          if (mode === "edit") {
+          if (mode === "edit" || mode === "split") {
             e.preventDefault();
             wrapSelection("**", "**", "bold");
           }
           break;
         case "i":
-          if (mode === "edit") {
+          if (mode === "edit" || mode === "split") {
             e.preventDefault();
             wrapSelection("*", "*", "italic");
           }
           break;
         case "k":
-          if (mode === "edit") {
+          if (mode === "edit" || mode === "split") {
             e.preventDefault();
             insertLink();
           }
@@ -628,6 +898,7 @@ function App() {
   const tabs = docs.map((d) => ({ id: d.id, name: docName(d), dirty: d.dirty }));
   const docA = compare ? docs.find((d) => d.id === compare.aId) : undefined;
   const docB = compare ? docs.find((d) => d.id === compare.bId) : undefined;
+  const editing = mode === "edit" || mode === "split";
 
   return (
     <div className="app">
@@ -667,6 +938,16 @@ function App() {
             Edit
           </button>
           <button
+            className={!compare && mode === "split" ? "active" : ""}
+            onClick={() => {
+              setCompare(null);
+              setMode("split");
+            }}
+            title="Split editor and preview (⌘⇧E)"
+          >
+            Split
+          </button>
+          <button
             className={compare ? "active" : ""}
             onClick={startCompare}
             disabled={docs.length < 2}
@@ -679,6 +960,9 @@ function App() {
         <div className="spacer" data-tauri-drag-region />
 
         <div className="toolbar-group">
+          <button className="icon-btn" onClick={() => setPresenting(true)} title="Present (⌘⇧P)">
+            ▶
+          </button>
           <select
             className="export-select"
             value={prefs.theme}
@@ -702,8 +986,9 @@ function App() {
             className="export-select"
             value=""
             onChange={(e) => {
-              const v = e.target.value as ExportKind;
-              if (v) exportAs(v);
+              const v = e.target.value;
+              if (v.startsWith("pd:")) exportPandoc(v.slice(3));
+              else if (v) exportAs(v as ExportKind);
               e.target.value = "";
             }}
           >
@@ -713,6 +998,15 @@ function App() {
             <option value="json">JSON AST (.json)</option>
             <option value="docx">Word (.docx)</option>
             <option value="pdf">PDF (print)</option>
+            {pandocOk && (
+              <optgroup label="Via Pandoc">
+                {PANDOC_FORMATS.map((f) => (
+                  <option key={f.ext} value={`pd:${f.ext}`}>
+                    {f.label}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </div>
       </header>
@@ -722,9 +1016,11 @@ function App() {
           <Sidebar
             files={files}
             folderName={folderPath ? basename(folderPath) : null}
+            folderPath={folderPath}
             activePath={filePath}
             onOpenFile={openPath}
             onOpenFolder={openFolder}
+            onOpenAtLine={openPathAtLine}
             headings={headings}
             onGotoHeading={gotoHeading}
           />
@@ -768,7 +1064,7 @@ function App() {
               </button>
             </div>
           ) : (
-            mode === "edit" && (
+            editing && (
               <div className="format-bar">
                 <button className="fmt fmt-b" title="Bold (⌘B)" onClick={() => wrapSelection("**", "**", "bold")}>
                   B
@@ -825,24 +1121,25 @@ function App() {
               <DiffView a={docA?.source ?? ""} b={docB?.source ?? ""} dark={prefs.dark} />
             ) : mode === "preview" ? (
               <div className="markdown-body">
-                <Preview source={source} dark={prefs.dark} onToggleTask={toggleTask} />
+                <Preview source={source} dark={prefs.dark} basePath={baseDir} onToggleTask={toggleTask} />
               </div>
-            ) : (
-              <CodeMirror
-                key={active.id}
-                ref={cmRef}
-                className="editor"
+            ) : mode === "split" ? (
+              <SplitView
+                docId={active.id}
                 value={source}
-                height="100%"
-                theme="none"
-                basicSetup={{ foldGutter: false, syntaxHighlighting: false }}
-                extensions={[
-                  markdown(),
-                  search(),
-                  editorTheme,
-                  editorHighlight,
-                  EditorView.lineWrapping,
-                ]}
+                cmRef={cmRef}
+                extra={editorExtras}
+                onChange={(value) => patchDocById(active.id, { source: value, dirty: true })}
+                dark={prefs.dark}
+                basePath={baseDir}
+                onToggleTask={toggleTask}
+              />
+            ) : (
+              <EditorPane
+                docId={active.id}
+                value={source}
+                cmRef={cmRef}
+                extra={editorExtras}
                 onChange={(value) => patchDocById(active.id, { source: value, dirty: true })}
               />
             )}
@@ -856,11 +1153,20 @@ function App() {
             </span>
             <span>
               {wordCount} words · {readMin} min read
-              {compare ? " · Compare" : mode === "edit" ? " · Edit" : ""}
+              {compare ? " · Compare" : mode === "edit" ? " · Edit" : mode === "split" ? " · Split" : ""}
             </span>
           </footer>
         </div>
       </div>
+
+      {presenting && (
+        <PresentView
+          source={source}
+          dark={prefs.dark}
+          basePath={baseDir}
+          onClose={() => setPresenting(false)}
+        />
+      )}
     </div>
   );
 }

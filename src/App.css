@@ -278,6 +278,74 @@ body {
   margin-right: 0.4em;
 }
 
+/* ---------- GitHub-style alerts / callouts ---------- */
+.markdown-body .markdown-alert {
+  border-left: 0.25em solid var(--alert-color, var(--accent));
+  background: color-mix(in srgb, var(--alert-color, var(--accent)) 9%, transparent);
+  border-radius: 0 8px 8px 0;
+  padding: 0.5em 1em;
+  margin: 1em 0;
+  color: var(--text);
+}
+.markdown-body .markdown-alert > :first-child {
+  margin-top: 0;
+}
+.markdown-body .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+.markdown-body .markdown-alert-title {
+  font-weight: 600;
+  color: var(--alert-color, var(--accent));
+  margin-bottom: 0.3em;
+}
+.markdown-body .markdown-alert-note {
+  --alert-color: #0969da;
+}
+.markdown-body .markdown-alert-tip {
+  --alert-color: #1a7f37;
+}
+.markdown-body .markdown-alert-important {
+  --alert-color: #8250df;
+}
+.markdown-body .markdown-alert-warning {
+  --alert-color: #9a6700;
+}
+.markdown-body .markdown-alert-caution {
+  --alert-color: #cf222e;
+}
+:root[data-theme="dark"] .markdown-alert-note {
+  --alert-color: #4493f8;
+}
+:root[data-theme="dark"] .markdown-alert-tip {
+  --alert-color: #3fb950;
+}
+:root[data-theme="dark"] .markdown-alert-important {
+  --alert-color: #ab7df8;
+}
+:root[data-theme="dark"] .markdown-alert-warning {
+  --alert-color: #d29922;
+}
+:root[data-theme="dark"] .markdown-alert-caution {
+  --alert-color: #f85149;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .markdown-alert-note {
+    --alert-color: #4493f8;
+  }
+  :root:not([data-theme]) .markdown-alert-tip {
+    --alert-color: #3fb950;
+  }
+  :root:not([data-theme]) .markdown-alert-important {
+    --alert-color: #ab7df8;
+  }
+  :root:not([data-theme]) .markdown-alert-warning {
+    --alert-color: #d29922;
+  }
+  :root:not([data-theme]) .markdown-alert-caution {
+    --alert-color: #f85149;
+  }
+}
+
 /* ---------- Syntax highlighting (adaptive, set via CSS vars) ---------- */
 .hljs-comment,
 .hljs-quote {
@@ -741,4 +809,138 @@ body {
 .diff-view .cm-scroller {
   font-family: "SF Mono", ui-monospace, Menlo, monospace;
   font-size: 13px;
+}
+
+/* ---------- Split view (editor + preview) ---------- */
+.split {
+  display: flex;
+  height: 100%;
+}
+.split-pane {
+  flex: 1 1 50%;
+  min-width: 0;
+  height: 100%;
+}
+.split-editor {
+  overflow: hidden;
+  border-right: 1px solid var(--hairline);
+}
+.split-preview {
+  overflow: auto;
+}
+
+/* ---------- Folder search (sidebar) ---------- */
+.sidebar-search {
+  display: block;
+  width: calc(100% - 28px);
+  margin: 0 14px 6px;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  outline: none;
+}
+.sidebar-search:focus {
+  border-color: var(--accent);
+}
+.search-hit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 5px 14px;
+  color: var(--text);
+  font: inherit;
+}
+.search-hit:hover {
+  background: var(--panel);
+}
+.search-hit-file {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-hit-line {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.search-hit-text {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Presentation mode ---------- */
+.present {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--reading-bg);
+  display: flex;
+  flex-direction: column;
+}
+.present-stage {
+  flex: 1 1 auto;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  cursor: pointer;
+}
+.present-slide.markdown-body {
+  max-width: 900px;
+  width: 100%;
+  margin: auto;
+  padding: 6vh 6vw;
+  font-size: calc(20px * var(--zoom, 1));
+}
+.present-bar {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--panel-strong);
+  border: 1px solid var(--hairline);
+  border-radius: 11px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+.present-bar .fmt {
+  font: inherit;
+  font-size: 14px;
+  min-width: 30px;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.present-bar .fmt:hover:not(:disabled) {
+  background: var(--panel-strong);
+}
+.present-bar .fmt:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.present-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  min-width: 54px;
+  text-align: center;
 }
