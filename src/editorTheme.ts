@@ -19,6 +19,11 @@ export const editorTheme = EditorView.theme({
     fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
   },
   ".cm-content": {
+    // Set the text colour on .cm-content itself, not just the .cm-editor (&)
+    // ancestor: in WKWebView the editable area falls back to the window's
+    // appearance-default colour (white in the vibrancy window) instead of
+    // inheriting, which made the text invisible on the light surface.
+    color: "var(--text)",
     caretColor: "var(--accent)",
   },
   ".cm-cursor, .cm-dropCursor": {
