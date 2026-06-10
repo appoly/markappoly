@@ -178,8 +178,32 @@ body {
   background: transparent !important;
 }
 
+/* Editor colours, forced from the bundled stylesheet rather than the
+   CodeMirror-injected theme. In the production build (custom protocol + strict
+   CSP) the injected theme's colours don't hold, and WKWebView fills the
+   editable text colour from the window appearance (white in the vibrancy
+   window). Static !important rules here apply reliably in both dev and release. */
+.editor .cm-content {
+  color: var(--text) !important;
+  caret-color: var(--accent);
+}
 .editor .cm-gutters {
   border: none;
+  color: var(--text-muted) !important;
+}
+.editor .cm-cursor,
+.editor .cm-dropCursor {
+  border-left-color: var(--accent) !important;
+}
+.editor .cm-activeLine {
+  background: var(--code-bg);
+}
+.editor .cm-activeLineGutter {
+  background: var(--code-bg);
+}
+.editor .cm-selectionBackground,
+.editor .cm-focused .cm-selectionBackground {
+  background: var(--selection) !important;
 }
 
 .markdown-body {
