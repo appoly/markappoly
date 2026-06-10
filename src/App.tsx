@@ -8,6 +8,8 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import CodeMirror, { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { search, openSearchPanel } from "@codemirror/search";
+import { EditorView } from "@codemirror/view";
+import { editorTheme, editorHighlight } from "./editorTheme";
 import { Preview, extractHeadings, type Heading } from "./markdown";
 import { FindBar } from "./FindBar";
 import { Sidebar, type FileEntry } from "./Sidebar";
@@ -35,32 +37,81 @@ type Doc = {
 
 const MD_EXTENSIONS = ["md", "markdown", "mdown", "mkd", "mkdn", "txt"];
 
-const WELCOME = `# Markappoly
+const WELCOME = `# Welcome to Markappoly
 
-> **Pass Go, straight to preview.** A fast, cross-platform viewer for **formatted Markdown** — built with Tauri + React.
+> **Pass Go, straight to preview.** A fast, native Markdown viewer and editor for macOS, Windows, and Linux.
 
-## What works
+You're looking at a live preview. Press **⌘E** to open the editor and again to come back, or open your own file with **⌘O**. This document shows what Markappoly can render.
 
-- Open any \`.md\` file (or a whole folder) and read it nicely formatted
-- Toggle to **Edit** mode (⌘E) — a formatting toolbar appears
-- **Export** to TXT, HTML, JSON, Word or PDF
-- Open several files as **tabs**, and **Compare** two of them side by side
-- Math, diagrams, an outline, find (⌘F), live reload, and more
+## Formatting
 
-### Math & diagrams
+Markappoly speaks **GitHub-Flavored Markdown**: **bold**, *italic*, ~~strikethrough~~, \`inline code\`, and [links](https://github.com/appoly/markappoly).
 
-Inline math like $e^{i\\pi} + 1 = 0$ and blocks render via KaTeX.
+> Blockquotes look like this, handy for notes and asides.
 
-\`\`\`mermaid
-graph LR
-  A[Write] --> B[Preview]
-  B --> C[Export]
+### Lists and tasks
+
+- Bulleted lists
+- with nested items
+  - like this one
+- [x] Task boxes you can tick
+- [ ] Tick this one and watch it save back to the source
+
+1. Numbered lists too
+2. in the order you write them
+
+### Tables
+
+| Action         | Shortcut | Notes                          |
+| -------------- | -------- | ------------------------------ |
+| Open file      | ⌘O       | or drag a file onto the window |
+| Edit / preview | ⌘E       | toggle back and forth          |
+| Find           | ⌘F       | search the open document       |
+| Export         | menu     | Text, HTML, JSON, Word, PDF    |
+
+## Code
+
+Fenced code blocks are syntax-highlighted:
+
+\`\`\`js
+function greet(name) {
+  return "Hello, " + name + "!";
+}
+
+greet("Markappoly");
 \`\`\`
 
-- [x] Render Markdown
-- [ ] Try ticking this box
+## Math
 
-> Open a file with ⌘O, or drag one onto the window.
+Inline math like $E = mc^2$ renders with KaTeX, and so do display blocks:
+
+$$
+\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}
+$$
+
+## Diagrams
+
+Mermaid diagrams render straight from a fenced \`mermaid\` block:
+
+\`\`\`mermaid
+flowchart LR
+  A[Open or write] --> B[Preview]
+  B --> C{Happy?}
+  C -->|Yes| D[Export]
+  C -->|No| A
+\`\`\`
+
+---
+
+### Do more
+
+- Open several files as **tabs**, then **Compare** two of them side by side
+- Browse a whole folder from the sidebar with **⌘⇧O**
+- Use the outline on the left to jump around long documents
+
+New here? The full guide lives in the [user manual](https://github.com/appoly/markappoly/wiki).
+
+> Open a file with ⌘O, or just start typing in **Edit** mode.
 `;
 
 function basename(path: string | null): string {
@@ -783,8 +834,15 @@ function App() {
                 className="editor"
                 value={source}
                 height="100%"
-                theme={prefs.dark ? "dark" : "light"}
-                extensions={[markdown(), search()]}
+                theme="none"
+                basicSetup={{ foldGutter: false, syntaxHighlighting: false }}
+                extensions={[
+                  markdown(),
+                  search(),
+                  editorTheme,
+                  editorHighlight,
+                  EditorView.lineWrapping,
+                ]}
                 onChange={(value) => patchDocById(active.id, { source: value, dirty: true })}
               />
             )}
