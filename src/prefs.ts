@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type ThemePref = "system" | "light" | "dark";
 
@@ -31,6 +32,13 @@ export function usePreferences() {
     if (theme === "system") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", theme);
     localStorage.setItem(THEME_KEY, JSON.stringify(theme));
+    // Sync the native window appearance so the macOS vibrancy material (and
+    // Windows acrylic) follows the in-app theme instead of the OS appearance.
+    // Without this, choosing Dark while the OS is Light leaves the chrome's
+    // translucent panels over a light material, rendering near-invisible.
+    getCurrentWindow()
+      .setTheme(theme === "system" ? null : theme)
+      .catch((e) => console.warn("Failed to sync native window theme:", e));
   }, [theme]);
 
   useEffect(() => {
