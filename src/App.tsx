@@ -17,7 +17,20 @@ import { Sidebar, type FileEntry } from "./Sidebar";
 import { TabBar } from "./TabBar";
 import { DiffView } from "./DiffView";
 import { PresentView } from "./PresentView";
-import { usePreferences, type ThemePref } from "./prefs";
+import { usePreferences } from "./prefs";
+import { Menu, type MenuEntry } from "./Menu";
+import {
+  SidebarIcon,
+  OpenIcon,
+  SaveIcon,
+  ReloadIcon,
+  PresentIcon,
+  MinusIcon,
+  PlusIcon,
+  ExportIcon,
+  MoreIcon,
+  ChevronIcon,
+} from "./icons";
 import {
   markdownToHtml,
   markdownToAst,
@@ -916,21 +929,51 @@ function App() {
   const docB = compare ? docs.find((d) => d.id === compare.bId) : undefined;
   const editing = mode === "edit" || mode === "split";
 
+  const exportItems: MenuEntry[] = [
+    { type: "item", label: "Text (.txt)", onSelect: () => exportAs("txt") },
+    { type: "item", label: "HTML (.html)", onSelect: () => exportAs("html") },
+    { type: "item", label: "JSON AST (.json)", onSelect: () => exportAs("json") },
+    { type: "item", label: "Word (.docx)", onSelect: () => exportAs("docx") },
+    { type: "item", label: "PDF (print)", onSelect: () => exportAs("pdf") },
+    ...(pandocOk
+      ? [
+          { type: "header", label: "Via Pandoc" } as MenuEntry,
+          ...PANDOC_FORMATS.map(
+            (f): MenuEntry => ({ type: "item", label: f.label, onSelect: () => exportPandoc(f.ext) }),
+          ),
+        ]
+      : []),
+  ];
+
+  const overflowItems: MenuEntry[] = [
+    { type: "item", label: "Compare two files…", onSelect: startCompare, disabled: docs.length < 2 },
+    { type: "separator" },
+    { type: "header", label: "Theme" },
+    { type: "item", label: "System", onSelect: () => prefs.setTheme("system"), checked: prefs.theme === "system" },
+    { type: "item", label: "Light", onSelect: () => prefs.setTheme("light"), checked: prefs.theme === "light" },
+    { type: "item", label: "Dark", onSelect: () => prefs.setTheme("dark"), checked: prefs.theme === "dark" },
+  ];
+
   return (
     <div className="app">
       <header className="toolbar" data-tauri-drag-region>
         <div className="toolbar-group">
           <button className="icon-btn" onClick={prefs.toggleSidebar} title="Toggle sidebar (⌘\)">
-            ☰
+            <SidebarIcon />
           </button>
-          <button onClick={openFile} title="Open (⌘O)">
-            Open
+          <button className="icon-btn" onClick={openFile} title="Open (⌘O)">
+            <OpenIcon />
           </button>
-          <button onClick={saveFile} title="Save (⌘S)" disabled={!dirty && !!filePath}>
-            Save
+          <button
+            className="icon-btn"
+            onClick={saveFile}
+            title="Save (⌘S)"
+            disabled={!dirty && !!filePath}
+          >
+            <SaveIcon />
           </button>
-          <button onClick={reloadFile} title="Reload (⌘R)" disabled={!filePath}>
-            Reload
+          <button className="icon-btn" onClick={reloadFile} title="Reload (⌘R)" disabled={!filePath}>
+            <ReloadIcon />
           </button>
         </div>
 
@@ -963,67 +1006,47 @@ function App() {
           >
             Split
           </button>
-          <button
-            className={compare ? "active" : ""}
-            onClick={startCompare}
-            disabled={docs.length < 2}
-            title="Compare two open files"
-          >
-            Compare
-          </button>
         </div>
 
         <div className="spacer" data-tauri-drag-region />
 
         <div className="toolbar-group">
           <button className="icon-btn" onClick={() => setPresenting(true)} title="Present (⌘⇧P)">
-            ▶
+            <PresentIcon />
           </button>
-          <select
-            className="export-select"
-            value={prefs.theme}
-            onChange={(e) => prefs.setTheme(e.target.value as ThemePref)}
-            title="Theme"
-          >
-            <option value="system">Theme: System</option>
-            <option value="light">Theme: Light</option>
-            <option value="dark">Theme: Dark</option>
-          </select>
-          <button className="icon-btn" onClick={prefs.zoomOut} title="Zoom out (⌘-)">
-            −
-          </button>
-          <button className="icon-btn zoom-label" onClick={prefs.zoomReset} title="Reset zoom (⌘0)">
-            {Math.round(prefs.zoom * 100)}%
-          </button>
-          <button className="icon-btn" onClick={prefs.zoomIn} title="Zoom in (⌘+)">
-            +
-          </button>
-          <select
-            className="export-select"
-            value=""
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v.startsWith("pd:")) exportPandoc(v.slice(3));
-              else if (v) exportAs(v as ExportKind);
-              e.target.value = "";
-            }}
-          >
-            <option value="">Export…</option>
-            <option value="txt">Text (.txt)</option>
-            <option value="html">HTML (.html)</option>
-            <option value="json">JSON AST (.json)</option>
-            <option value="docx">Word (.docx)</option>
-            <option value="pdf">PDF (print)</option>
-            {pandocOk && (
-              <optgroup label="Via Pandoc">
-                {PANDOC_FORMATS.map((f) => (
-                  <option key={f.ext} value={`pd:${f.ext}`}>
-                    {f.label}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
+
+          <div className="zoom-pill">
+            <button className="icon-btn" onClick={prefs.zoomOut} title="Zoom out (⌘-)">
+              <MinusIcon />
+            </button>
+            <button className="zoom-label" onClick={prefs.zoomReset} title="Reset zoom (⌘0)">
+              {Math.round(prefs.zoom * 100)}%
+            </button>
+            <button className="icon-btn" onClick={prefs.zoomIn} title="Zoom in (⌘+)">
+              <PlusIcon />
+            </button>
+          </div>
+
+          <Menu
+            className="icon-btn menu-trigger"
+            title="Export…"
+            align="right"
+            label={
+              <>
+                <ExportIcon />
+                <ChevronIcon />
+              </>
+            }
+            items={exportItems}
+          />
+
+          <Menu
+            className="icon-btn menu-trigger"
+            title="More"
+            align="right"
+            label={<MoreIcon />}
+            items={overflowItems}
+          />
         </div>
       </header>
 
