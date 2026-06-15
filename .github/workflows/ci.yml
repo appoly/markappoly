@@ -49,3 +49,31 @@ jobs:
 
       - name: Check Rust
         run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # Fail on high/critical advisories in shipped (non-dev) dependencies.
+      - name: npm audit
+        run: npm audit --omit=dev --audit-level=high
+
+      # Prebuilt binary — avoids a long cargo install compile.
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Rust security audit
+        run: cargo audit --file src-tauri/Cargo.lock

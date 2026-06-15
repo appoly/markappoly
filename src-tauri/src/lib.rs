@@ -256,21 +256,23 @@ fn pandoc_available() -> bool {
 #[tauri::command]
 fn export_pandoc(src: String, out_path: String) -> Result<(), String> {
     let pandoc = find_pandoc().ok_or("Pandoc was not found on this system.")?;
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_millis();
-    let tmp = std::env::temp_dir().join(format!("markappoly-{}.md", ts));
-    fs::write(&tmp, src).map_err(|e| e.to_string())?;
+    // A private temp file (0600, unique name) rather than a predictable,
+    // world-readable path in the shared temp dir; it's removed on drop.
+    let mut tmp = tempfile::Builder::new()
+        .prefix("markappoly-")
+        .suffix(".md")
+        .tempfile()
+        .map_err(|e| e.to_string())?;
+    use std::io::Write as _;
+    tmp.write_all(src.as_bytes()).map_err(|e| e.to_string())?;
 
     let result = std::process::Command::new(&pandoc)
-        .arg(&tmp)
+        .arg(tmp.path())
         .arg("-f")
         .arg("gfm")
         .arg("-o")
         .arg(&out_path)
         .output();
-    let _ = fs::remove_file(&tmp);
 
     match result {
         Ok(out) if out.status.success() => Ok(()),

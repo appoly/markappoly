@@ -2,15 +2,25 @@ import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import remarkRehype from "remark-rehype";
+import rehypeSanitize from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
 import remarkDocx from "remark-docx";
 
-/** Render Markdown to an HTML fragment (GitHub-flavored). */
+/**
+ * Render Markdown to an HTML fragment (GitHub-flavored).
+ *
+ * Sanitized: this output feeds both the .html export and Copy-as-HTML, so it
+ * can end up opened in a browser or pasted into another app. remark-rehype
+ * already drops author raw HTML (no allowDangerousHtml), and rehype-sanitize
+ * additionally strips dangerous URL schemes (javascript:, data:) from links
+ * and images that would otherwise survive into the exported document.
+ */
 export function markdownToHtml(md: string): string {
   return unified()
     .use(remarkParse)
     .use(remarkGfm)
     .use(remarkRehype)
+    .use(rehypeSanitize)
     .use(rehypeStringify)
     .processSync(md)
     .toString();

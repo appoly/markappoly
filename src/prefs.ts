@@ -17,6 +17,7 @@ const READING_WIDTH_KEY = "mv.readingWidth";
 const READING_FONT_KEY = "mv.readingFont";
 const LINE_SPACING_KEY = "mv.lineSpacing";
 const CUSTOM_CSS_KEY = "mv.customCss";
+const BLOCK_REMOTE_IMG_KEY = "mv.blockRemoteImages";
 
 const WIDTHS: Record<ReadingWidth, string> = {
   narrow: "600px",
@@ -60,6 +61,9 @@ export function usePreferences() {
   const [readingFont, setReadingFont] = useState<ReadingFont>(() => load(READING_FONT_KEY, "sans"));
   const [lineSpacing, setLineSpacing] = useState<LineSpacing>(() => load(LINE_SPACING_KEY, "normal"));
   const [customCss, setCustomCss] = useState<string>(() => load(CUSTOM_CSS_KEY, ""));
+  const [blockRemoteImages, setBlockRemoteImages] = useState<boolean>(() =>
+    load(BLOCK_REMOTE_IMG_KEY, false),
+  );
   const [systemDark, setSystemDark] = useState(
     () => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false,
   );
@@ -123,6 +127,9 @@ export function usePreferences() {
   useEffect(() => {
     localStorage.setItem(PASTE_MD_KEY, JSON.stringify(pasteAsMarkdown));
   }, [pasteAsMarkdown]);
+  useEffect(() => {
+    localStorage.setItem(BLOCK_REMOTE_IMG_KEY, JSON.stringify(blockRemoteImages));
+  }, [blockRemoteImages]);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -167,5 +174,7 @@ export function usePreferences() {
     setLineSpacing,
     customCss,
     setCustomCss,
+    blockRemoteImages,
+    setBlockRemoteImages,
   };
 }

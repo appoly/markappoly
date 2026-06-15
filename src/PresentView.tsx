@@ -7,11 +7,13 @@ export function PresentView({
   dark,
   basePath,
   onClose,
+  blockRemoteImages,
 }: {
   source: string;
   dark: boolean;
   basePath?: string;
   onClose: () => void;
+  blockRemoteImages?: boolean;
 }) {
   const slides = useMemo(() => {
     const parts = source
@@ -51,7 +53,13 @@ export function PresentView({
         }}
       >
         <div className="present-slide markdown-body">
-          <Preview source={slides[at]} dark={dark} basePath={basePath} onToggleTask={() => {}} />
+          <Preview
+            source={slides[at]}
+            dark={dark}
+            basePath={basePath}
+            onToggleTask={() => {}}
+            blockRemoteImages={blockRemoteImages}
+          />
         </div>
       </div>
       <div className="present-bar">

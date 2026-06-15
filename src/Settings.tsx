@@ -95,6 +95,9 @@ export function Settings({ prefs, onClose }: { prefs: Prefs; onClose: () => void
             <Row label="Paste HTML as Markdown" hint="Convert pasted rich text">
               <Toggle checked={prefs.pasteAsMarkdown} onChange={prefs.setPasteAsMarkdown} />
             </Row>
+            <Row label="Block remote images" hint="Don't load images over the network">
+              <Toggle checked={prefs.blockRemoteImages} onChange={prefs.setBlockRemoteImages} />
+            </Row>
           </section>
 
           <section className="set-section">

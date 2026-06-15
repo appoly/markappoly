@@ -217,6 +217,7 @@ function SplitView({
   dark,
   basePath,
   onToggleTask,
+  blockRemoteImages,
 }: {
   docId: string;
   value: string;
@@ -226,6 +227,7 @@ function SplitView({
   dark: boolean;
   basePath?: string;
   onToggleTask: (i: number) => void;
+  blockRemoteImages?: boolean;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
@@ -258,7 +260,13 @@ function SplitView({
       </div>
       <div className="split-pane split-preview" ref={previewRef}>
         <div className="markdown-body">
-          <Preview source={value} dark={dark} basePath={basePath} onToggleTask={onToggleTask} />
+          <Preview
+            source={value}
+            dark={dark}
+            basePath={basePath}
+            onToggleTask={onToggleTask}
+            blockRemoteImages={blockRemoteImages}
+          />
         </div>
       </div>
     </div>
@@ -1205,7 +1213,13 @@ function App() {
               <DiffView a={docA?.source ?? ""} b={docB?.source ?? ""} dark={prefs.dark} />
             ) : mode === "preview" ? (
               <div className="markdown-body">
-                <Preview source={source} dark={prefs.dark} basePath={baseDir} onToggleTask={toggleTask} />
+                <Preview
+                  source={source}
+                  dark={prefs.dark}
+                  basePath={baseDir}
+                  onToggleTask={toggleTask}
+                  blockRemoteImages={prefs.blockRemoteImages}
+                />
               </div>
             ) : mode === "split" ? (
               <SplitView
@@ -1217,6 +1231,7 @@ function App() {
                 dark={prefs.dark}
                 basePath={baseDir}
                 onToggleTask={toggleTask}
+                blockRemoteImages={prefs.blockRemoteImages}
               />
             ) : (
               <EditorPane
@@ -1249,6 +1264,7 @@ function App() {
           dark={prefs.dark}
           basePath={baseDir}
           onClose={() => setPresenting(false)}
+          blockRemoteImages={prefs.blockRemoteImages}
         />
       )}
 

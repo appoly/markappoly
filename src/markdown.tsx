@@ -121,8 +121,11 @@ const REMOTE_SRC = /^(https?:|data:|blob:|asset:)/i;
 // Resolve a Markdown image src so local files render in the webview. Remote and
 // data URLs pass through; relative paths resolve against the document's folder
 // and go through Tauri's asset protocol.
-function resolveImageSrc(src: string, basePath?: string): string {
-  if (!src || REMOTE_SRC.test(src)) return src;
+function resolveImageSrc(src: string, basePath?: string, blockRemote?: boolean): string {
+  if (!src) return src;
+  // Privacy: when enabled, don't fetch images over the network (no tracking beacons).
+  if (blockRemote && /^https?:/i.test(src)) return "";
+  if (REMOTE_SRC.test(src)) return src;
   const isAbsolute = src.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(src);
   let filePath = src.replace(/^file:\/\//, "");
   if (!isAbsolute && basePath) {
@@ -140,9 +143,10 @@ type PreviewProps = {
   dark: boolean;
   onToggleTask: (index: number) => void;
   basePath?: string;
+  blockRemoteImages?: boolean;
 };
 
-export function Preview({ source, dark, onToggleTask, basePath }: PreviewProps) {
+export function Preview({ source, dark, onToggleTask, basePath, blockRemoteImages }: PreviewProps) {
   // Task checkboxes render in document order; track their index to map back to source.
   let taskIndex = -1;
 
@@ -159,7 +163,11 @@ export function Preview({ source, dark, onToggleTask, basePath }: PreviewProps) 
     },
     img({ node: _node, src, alt, ...rest }) {
       return (
-        <img src={resolveImageSrc(typeof src === "string" ? src : "", basePath)} alt={alt} {...rest} />
+        <img
+          src={resolveImageSrc(typeof src === "string" ? src : "", basePath, blockRemoteImages)}
+          alt={alt}
+          {...rest}
+        />
       );
     },
     input({ node: _node, ...props }) {
