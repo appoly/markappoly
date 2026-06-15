@@ -43,12 +43,15 @@
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
     "unified": "^11.0.5"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^6.0.2",
     "sharp": "^0.34.5",
     "typescript": "~5.8.3",

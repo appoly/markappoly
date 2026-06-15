@@ -351,6 +351,12 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>, recents: &[String]) -> tauri::
     let app_menu = SubmenuBuilder::new(app, "Markappoly")
         .about(Some(AboutMetadata::default()))
         .separator()
+        .item(
+            &MenuItemBuilder::with_id("settings", "Settings…")
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?,
+        )
+        .separator()
         .hide()
         .quit()
         .build()?;

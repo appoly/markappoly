@@ -18,6 +18,9 @@ import { TabBar } from "./TabBar";
 import { DiffView } from "./DiffView";
 import { PresentView } from "./PresentView";
 import { usePreferences } from "./prefs";
+import { Settings } from "./Settings";
+import { focusMode, typewriter, spellcheck, pasteMarkdown } from "./editorFeatures";
+import { insertTable, addRow, addColumn, formatTable } from "./tableTools";
 import { Menu, type MenuEntry } from "./Menu";
 import {
   SidebarIcon,
@@ -275,6 +278,7 @@ function App() {
   const [folderPath, setFolderPath] = useState<string | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [presenting, setPresenting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [pandocOk, setPandocOk] = useState(false);
 
   // Always-fresh references so stable callbacks can read current state.
@@ -588,7 +592,27 @@ function App() {
       }),
     [attachImage],
   );
-  const editorExtras = useMemo(() => [editorImageExt], [editorImageExt]);
+  const editorExtras = useMemo(() => {
+    const ext: Extension[] = [editorImageExt];
+    // Order matters: the image handler (in editorImageExt) runs before the
+    // paste-as-markdown handler, so image pastes still attach as files.
+    if (prefs.pasteAsMarkdown) ext.push(pasteMarkdown);
+    if (prefs.spellcheck) ext.push(spellcheck);
+    if (prefs.focusMode) ext.push(focusMode);
+    if (prefs.typewriter) ext.push(typewriter);
+    return ext;
+  }, [
+    editorImageExt,
+    prefs.pasteAsMarkdown,
+    prefs.spellcheck,
+    prefs.focusMode,
+    prefs.typewriter,
+  ]);
+
+  const runOnEditor = useCallback((fn: (view: EditorView) => void) => {
+    const view = cmRef.current?.view;
+    if (view) fn(view);
+  }, []);
 
   // ----- Compare -----
   const startCompare = useCallback(() => {
@@ -764,6 +788,9 @@ function App() {
           setCompare(null);
           setPresenting(true);
           break;
+        case "settings":
+          setSettingsOpen(true);
+          break;
         case "copy_html":
           copyAsHtml();
           break;
@@ -876,6 +903,10 @@ function App() {
           e.preventDefault();
           prefs.toggleSidebar();
           break;
+        case ",":
+          e.preventDefault();
+          setSettingsOpen((o) => !o);
+          break;
         case "=":
         case "+":
           e.preventDefault();
@@ -946,6 +977,7 @@ function App() {
   ];
 
   const overflowItems: MenuEntry[] = [
+    { type: "item", label: "Settings…", onSelect: () => setSettingsOpen(true) },
     { type: "item", label: "Compare two files…", onSelect: startCompare, disabled: docs.length < 2 },
     { type: "separator" },
     { type: "header", label: "Theme" },
@@ -1147,6 +1179,19 @@ function App() {
                 <button className="fmt" title="Link (⌘K)" onClick={insertLink}>
                   🔗 Link
                 </button>
+                <span className="sep" />
+                <button className="fmt" title="Insert table" onClick={() => runOnEditor(insertTable)}>
+                  ⊞ Table
+                </button>
+                <button className="fmt" title="Add row to table" onClick={() => runOnEditor(addRow)}>
+                  + Row
+                </button>
+                <button className="fmt" title="Add column to table" onClick={() => runOnEditor(addColumn)}>
+                  + Col
+                </button>
+                <button className="fmt" title="Align table columns" onClick={() => runOnEditor(formatTable)}>
+                  ↹ Align
+                </button>
               </div>
             )
           )}
@@ -1206,6 +1251,8 @@ function App() {
           onClose={() => setPresenting(false)}
         />
       )}
+
+      {settingsOpen && <Settings prefs={prefs} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
