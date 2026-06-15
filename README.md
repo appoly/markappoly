@@ -42,12 +42,18 @@ After the first launch the app keeps itself up to date: when a new version ships
 - Syntax-highlighted code, **KaTeX math**, **Mermaid diagrams**, and GitHub-style alerts (`> [!NOTE]`)
 - Outline sidebar and folder browser, find-in-document (⌘F), and search across a whole folder
 - Open Recent, word count and reading time, live reload when the file changes on disk
+- Adjustable reading width, font, and line spacing, plus your own custom CSS — and an option to block remote images
+- **Compare** two open files side by side as a diff
 - **Present mode** (⌘⇧P): turn the document into slides, split on `---`
 
 **Editing**
 - Toggle to a CodeMirror source editor with a formatting toolbar, or a **split view** (⌘⇧E) with editor and preview side by side, scrolling together
-- Paste or drag an image into the editor to attach it next to the document
+- **Focus mode** and **typewriter scrolling** for distraction-free writing, with editor spellcheck
+- Table tools to insert, extend, and align Markdown tables
+- Paste or drag an image to attach it next to the document; paste rich text and it converts to Markdown
 - Tick a checkbox in the preview and it writes the change back to the source
+
+Everything's tunable from **Settings** (⌘,).
 
 **Export:** Text, HTML, JSON (AST), **Word (.docx)**, and PDF, plus **Copy as HTML** for pasting rich text elsewhere. With [Pandoc](https://pandoc.org) installed, also RTF, EPUB, LaTeX, and Pandoc-rendered Word and PDF.
 
@@ -65,6 +71,7 @@ For a walkthrough of every feature, see the **[user manual](https://github.com/a
 | Reload from disk | ⌘R | Present | ⌘⇧P |
 | Toggle sidebar | ⌘\ | Zoom | ⌘+ / ⌘- / ⌘0 |
 | Bold / Italic | ⌘B / ⌘I | Link | ⌘K |
+| Settings | ⌘, | New tab / Close | ⌘T / ⌘W |
 
 ## Build from source
 
