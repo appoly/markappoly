@@ -503,23 +503,7 @@ body {
   background-clip: content-box;
 }
 
-/* ---------- Print / PDF export ---------- */
-@media print {
-  .toolbar,
-  .status-bar,
-  .sidebar,
-  .format-bar,
-  .find-bar {
-    display: none;
-  }
-  .content {
-    overflow: visible;
-  }
-  .markdown-body {
-    max-width: none;
-    padding: 0;
-  }
-}
+/* First print block kept for older cascade order; full rules live at file end. */
 
 /* ---------- Layout: sidebar + main column ---------- */
 .body {
@@ -611,11 +595,107 @@ body {
   background: var(--accent);
   color: var(--accent-text);
 }
+.folder-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.folder-item:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+.folder-chevron {
+  flex: 0 0 auto;
+  width: 12px;
+  font-size: 10px;
+  opacity: 0.7;
+}
 .outline-item {
   color: var(--text-muted);
 }
 .outline-item:hover {
   color: var(--text);
+}
+.outline-item.active {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--panel);
+}
+
+/* ---------- Frontmatter chrome ---------- */
+.frontmatter-bar {
+  margin: 0 0 1.25em;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.fm-title {
+  font-size: 1.15em;
+  font-weight: 650;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+.fm-desc {
+  font-size: 0.92em;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+.fm-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.fm-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--code-bg);
+  color: var(--text-muted);
+}
+.fm-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+.fm-kv {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--code-bg);
+}
+.fm-k {
+  font-weight: 600;
+  margin-right: 4px;
+  opacity: 0.75;
+}
+.fm-k::after {
+  content: ":";
+}
+
+.mermaid-pending {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 12px;
+  font-style: italic;
 }
 
 /* ---------- Toolbar extras ---------- */
@@ -1245,6 +1325,7 @@ body {
     --hl-constant: #0550ae;
     --hl-tag: #116329;
   }
+
   .toolbar,
   .tab-bar,
   .sidebar,
@@ -1254,9 +1335,11 @@ body {
   .find-bar,
   .status-bar,
   .menu-pop,
-  .modal-overlay {
+  .modal-overlay,
+  .zoom-pill {
     display: none !important;
   }
+
   html,
   body,
   #root,
@@ -1265,34 +1348,76 @@ body {
   .main-col,
   .content {
     height: auto !important;
+    min-height: 0 !important;
     overflow: visible !important;
     background: #fff !important;
   }
+
   .content {
     position: static !important;
   }
+
   .markdown-body {
     max-width: none !important;
     margin: 0 !important;
     padding: 0 !important;
     color: #000 !important;
+    font-size: 11pt !important;
+    line-height: 1.5 !important;
   }
+
   .markdown-body a {
     color: #000 !important;
     text-decoration: underline;
   }
+
+  /* Optional: print the destination after external links */
+  .markdown-body a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    color: #57606a;
+    word-break: break-all;
+  }
+
   .markdown-body pre,
   .markdown-body blockquote,
   .markdown-body table,
-  .markdown-body img {
+  .markdown-body img,
+  .markdown-body .mermaid-diagram,
+  .frontmatter-bar {
     break-inside: avoid;
   }
+
   .markdown-body h1,
   .markdown-body h2,
-  .markdown-body h3 {
+  .markdown-body h3,
+  .markdown-body h4 {
     break-after: avoid;
+    page-break-after: avoid;
   }
+
+  /* Thematic breaks (`---`) become page boundaries for PDF export. */
+  .markdown-body hr {
+    break-before: page;
+    page-break-before: always;
+    border: none;
+    height: 0;
+    margin: 0;
+    visibility: hidden;
+  }
+
+  .frontmatter-bar {
+    border: 1px solid #d1d9e0 !important;
+    background: #f6f8fa !important;
+    margin-bottom: 1.5em;
+  }
+
+  .mermaid-pending {
+    display: none;
+  }
+
   @page {
     margin: 18mm;
+    size: auto;
   }
 }

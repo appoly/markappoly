@@ -40,9 +40,12 @@ After the first launch the app keeps itself up to date: when a new version ships
 **Reading**
 - Formatted preview by default, with GitHub-flavored Markdown: tables, task lists, strikethrough
 - Syntax-highlighted code, **KaTeX math**, **Mermaid diagrams**, and GitHub-style alerts (`> [!NOTE]`)
-- Outline sidebar and folder browser, find-in-document (⌘F), and search across a whole folder
+- Outline sidebar (with scroll spy) and folder tree browser, find-in-document (⌘F), and search across a whole folder
 - Open Recent, word count and reading time, live reload when the file changes on disk
+- Session restore: tabs, folder, and view mode come back when you relaunch
 - Adjustable reading width, font, and line spacing, plus your own custom CSS — and an option to block remote images
+- YAML frontmatter chrome (title, tags, date) above the preview
+- Relative Markdown links open sibling notes as tabs
 - **Compare** two open files side by side as a diff
 - **Present mode** (⌘⇧P): turn the document into slides, split on `---`
 

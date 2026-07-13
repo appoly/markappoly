@@ -1,11 +1,107 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use notify::{RecommendedWatcher, RecursiveMode};
+use notify_debouncer_mini::{new_debouncer, DebouncedEventKind, Debouncer};
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::menu::{AboutMetadata, Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
+
+// ---------- Live file watching (replaces mtime polling) ----------
+
+struct FileWatchState {
+    debouncer: Mutex<Option<Debouncer<RecommendedWatcher>>>,
+}
+
+impl Default for FileWatchState {
+    fn default() -> Self {
+        Self {
+            debouncer: Mutex::new(None),
+        }
+    }
+}
+
+fn path_key(p: &Path) -> String {
+    // Normalize for comparison across platforms without requiring the file to exist.
+    p.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+/// Replace the set of watched files. Watches each file's parent directory (so
+/// atomic save-via-rename from editors is still detected) and emits
+/// `file-changed` with the original open-tab path when a watched file changes.
+#[tauri::command]
+fn set_watched_files(
+    app: AppHandle,
+    state: tauri::State<FileWatchState>,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    // key (normalized) → original path string the frontend opened with
+    let mut by_key: HashMap<String, String> = HashMap::new();
+    let mut parents = HashSet::new();
+    for p in &paths {
+        let pb = PathBuf::from(p);
+        if let Some(parent) = pb.parent() {
+            parents.insert(parent.to_path_buf());
+        }
+        by_key.insert(path_key(&pb), p.clone());
+    }
+
+    // Drop the previous debouncer (stops its thread) before creating a new one.
+    {
+        let mut slot = state.debouncer.lock().map_err(|e| e.to_string())?;
+        *slot = None;
+    }
+
+    if parents.is_empty() {
+        return Ok(());
+    }
+
+    let watched = Arc::new(by_key);
+    let app_for_cb = app.clone();
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(300),
+        move |res: Result<Vec<notify_debouncer_mini::DebouncedEvent>, _>| {
+            let Ok(events) = res else {
+                return;
+            };
+            for ev in events {
+                if ev.kind != DebouncedEventKind::Any {
+                    continue;
+                }
+                let key = path_key(&ev.path);
+                if let Some(original) = watched.get(&key) {
+                    let _ = app_for_cb.emit("file-changed", original.clone());
+                }
+            }
+        },
+    )
+    .map_err(|e| e.to_string())?;
+
+    for parent in parents {
+        // Non-recursive: nested files register their own parent separately.
+        let _ = debouncer
+            .watcher()
+            .watch(&parent, RecursiveMode::NonRecursive);
+    }
+
+    *state.debouncer.lock().map_err(|e| e.to_string())? = Some(debouncer);
+    Ok(())
+}
+
+/// Whether a path currently exists as a regular file (session restore for tabs).
+#[tauri::command]
+fn path_exists(path: String) -> bool {
+    Path::new(&path).is_file()
+}
+
+/// Whether a path currently exists as a directory (session restore for folders).
+#[tauri::command]
+fn path_is_dir(path: String) -> bool {
+    Path::new(&path).is_dir()
+}
 
 /// Read a UTF-8 text file from an absolute path chosen via the dialog.
 #[tauri::command]
@@ -475,6 +571,7 @@ pub fn run() {
 
     let app = builder
         .manage(PendingOpen::default())
+        .manage(FileWatchState::default())
         .on_menu_event(|app, event| {
             let _ = app.emit("menu", event.id().0.clone());
         })
@@ -520,7 +617,10 @@ pub fn run() {
             export_pandoc,
             recent_files,
             push_recent,
-            clear_recents
+            clear_recents,
+            set_watched_files,
+            path_exists,
+            path_is_dir
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

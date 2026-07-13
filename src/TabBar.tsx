@@ -8,7 +8,7 @@ export function TabBar({
   tabs: { id: string; name: string; dirty: boolean }[];
   activeId: string;
   onSelect: (id: string) => void;
-  onClose: (id: string) => void;
+  onClose: (id: string) => void | Promise<void>;
   onNew: () => void;
 }) {
   return (

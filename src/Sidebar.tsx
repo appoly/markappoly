@@ -1,9 +1,96 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Heading } from "./markdown";
+import { buildFolderTree, type TreeNode } from "./folderTree";
 
 export type FileEntry = { name: string; path: string };
 type SearchHit = { path: string; name: string; line: number; text: string };
+
+function FileTree({
+  nodes,
+  activePath,
+  onOpenFile,
+  depth = 0,
+}: {
+  nodes: TreeNode[];
+  activePath: string | null;
+  onOpenFile: (path: string) => void;
+  depth?: number;
+}) {
+  return (
+    <ul className="file-list" style={depth === 0 ? undefined : { paddingLeft: 0 }}>
+      {nodes.map((n) =>
+        n.kind === "dir" ? (
+          <FolderNode
+            key={`d:${n.name}:${depth}`}
+            node={n}
+            activePath={activePath}
+            onOpenFile={onOpenFile}
+            depth={depth}
+          />
+        ) : (
+          <li key={n.path}>
+            <button
+              className={"file-item" + (n.path === activePath ? " active" : "")}
+              style={{ paddingLeft: 14 + depth * 12 }}
+              onClick={() => onOpenFile(n.path)}
+              title={n.path}
+            >
+              {n.name}
+            </button>
+          </li>
+        ),
+      )}
+    </ul>
+  );
+}
+
+function FolderNode({
+  node,
+  activePath,
+  onOpenFile,
+  depth,
+}: {
+  node: Extract<TreeNode, { kind: "dir" }>;
+  activePath: string | null;
+  onOpenFile: (path: string) => void;
+  depth: number;
+}) {
+  // Auto-expand if the active file lives under this folder.
+  const containsActive = useMemo(() => {
+    if (!activePath) return false;
+    const walk = (nodes: TreeNode[]): boolean =>
+      nodes.some((n) => (n.kind === "file" ? n.path === activePath : walk(n.children)));
+    return walk(node.children);
+  }, [node, activePath]);
+
+  const [open, setOpen] = useState(depth < 1 || containsActive);
+  useEffect(() => {
+    if (containsActive) setOpen(true);
+  }, [containsActive]);
+
+  return (
+    <li className="tree-folder">
+      <button
+        className="folder-item"
+        style={{ paddingLeft: 14 + depth * 12 }}
+        onClick={() => setOpen((o) => !o)}
+        title={node.name}
+      >
+        <span className="folder-chevron">{open ? "▾" : "▸"}</span>
+        {node.name}
+      </button>
+      {open && (
+        <FileTree
+          nodes={node.children}
+          activePath={activePath}
+          onOpenFile={onOpenFile}
+          depth={depth + 1}
+        />
+      )}
+    </li>
+  );
+}
 
 export function Sidebar({
   files,
@@ -15,6 +102,7 @@ export function Sidebar({
   onOpenAtLine,
   headings,
   onGotoHeading,
+  activeHeadingSlug,
 }: {
   files: FileEntry[];
   folderName: string | null;
@@ -25,10 +113,12 @@ export function Sidebar({
   onOpenAtLine: (path: string, line: number) => void;
   headings: Heading[];
   onGotoHeading: (h: Heading) => void;
+  activeHeadingSlug?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
+  const tree = useMemo(() => buildFolderTree(files), [files]);
 
   useEffect(() => {
     if (!folderPath || query.trim() === "") {
@@ -99,19 +189,7 @@ export function Sidebar({
         ) : files.length === 0 ? (
           <div className="sidebar-empty">No folder open</div>
         ) : (
-          <ul className="file-list">
-            {files.map((f) => (
-              <li key={f.path}>
-                <button
-                  className={"file-item" + (f.path === activePath ? " active" : "")}
-                  onClick={() => onOpenFile(f.path)}
-                  title={f.name}
-                >
-                  {f.name}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <FileTree nodes={tree} activePath={activePath} onOpenFile={onOpenFile} />
         )}
       </div>
 
@@ -124,9 +202,11 @@ export function Sidebar({
         ) : (
           <ul className="outline-list">
             {headings.map((h, i) => (
-              <li key={i} style={{ paddingLeft: 4 + (h.depth - 1) * 12 }}>
+              <li key={`${h.slug}:${i}`} style={{ paddingLeft: 4 + (h.depth - 1) * 12 }}>
                 <button
-                  className="outline-item"
+                  className={
+                    "outline-item" + (activeHeadingSlug && h.slug === activeHeadingSlug ? " active" : "")
+                  }
                   onClick={() => onGotoHeading(h)}
                   title={h.text}
                 >

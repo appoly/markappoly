@@ -6,8 +6,8 @@ Markappoly is distributed through GitHub Releases, and security fixes land on th
 
 | Version | Supported |
 | ------- | --------- |
-| 0.3.x   | ✅ |
-| < 0.3   | ❌ |
+| 0.4.x   | ✅ |
+| < 0.4   | ❌ |
 
 ## Reporting a vulnerability
 

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -8,33 +9,16 @@ import rehypeKatex from "rehype-katex";
 import rehypeSlug from "rehype-slug";
 import rehypeHighlight from "rehype-highlight";
 import type { PluggableList } from "unified";
-import GithubSlugger from "github-slugger";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { Mermaid } from "./Mermaid";
+import { isLocalMarkdownHref, resolveRelativePath } from "./paths";
+import type { Heading } from "./headings";
+import { extractHeadings } from "./headings";
 import "katex/dist/katex.min.css";
 
-export type Heading = { depth: number; text: string; slug: string; line: number };
-
-/** Extract headings (with github-slugger slugs matching rehype-slug) for the outline. */
-export function extractHeadings(source: string): Heading[] {
-  const slugger = new GithubSlugger();
-  const headings: Heading[] = [];
-  let inFence = false;
-  source.split("\n").forEach((line, i) => {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence;
-      return;
-    }
-    if (inFence) return;
-    const m = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (m) {
-      const text = m[2].replace(/\s*#+\s*$/, "").trim();
-      headings.push({ depth: m[1].length, text, slug: slugger.slug(text), line: i });
-    }
-  });
-  return headings;
-}
+export type { Heading };
+export { extractHeadings };
 
 // Sanitize untrusted HTML embedded in the Markdown. This strips <script>, event
 // handlers (onerror/onload/…), javascript: URLs, etc. KaTeX, syntax highlighting
@@ -63,9 +47,7 @@ const sanitizeSchema = {
 };
 
 // GitHub-style alerts: turn `> [!NOTE]` (and TIP/IMPORTANT/WARNING/CAUTION)
-// blockquotes into labelled, coloured admonitions. Implemented as a small mdast
-// transform so its output (a plain blockquote with class names) survives the
-// sanitize step without needing to allow <svg> or <div>.
+// blockquotes into labelled, coloured admonitions.
 const ALERT_RE = /^\[!(note|tip|important|warning|caution)\][ \t]*\r?\n?/i;
 function remarkAlerts() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -114,16 +96,11 @@ const rehypePlugins: PluggableList = [
   rehypeHighlight,
 ];
 
-// Only open links with safe schemes externally; ignore file:, javascript:, etc.
 const SAFE_LINK = /^(https?:|mailto:)/i;
 const REMOTE_SRC = /^(https?:|data:|blob:|asset:)/i;
 
-// Resolve a Markdown image src so local files render in the webview. Remote and
-// data URLs pass through; relative paths resolve against the document's folder
-// and go through Tauri's asset protocol.
-function resolveImageSrc(src: string, basePath?: string, blockRemote?: boolean): string {
+export function resolveImageSrc(src: string, basePath?: string, blockRemote?: boolean): string {
   if (!src) return src;
-  // Privacy: when enabled, don't fetch images over the network (no tracking beacons).
   if (blockRemote && /^https?:/i.test(src)) return "";
   if (REMOTE_SRC.test(src)) return src;
   const isAbsolute = src.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(src);
@@ -142,12 +119,22 @@ type PreviewProps = {
   source: string;
   dark: boolean;
   onToggleTask: (index: number) => void;
+  /** Open a resolved local Markdown path (relative links). */
+  onOpenLocal?: (path: string) => void;
   basePath?: string;
   blockRemoteImages?: boolean;
 };
 
-export function Preview({ source, dark, onToggleTask, basePath, blockRemoteImages }: PreviewProps) {
+function PreviewInner({
+  source,
+  dark,
+  onToggleTask,
+  onOpenLocal,
+  basePath,
+  blockRemoteImages,
+}: PreviewProps) {
   // Task checkboxes render in document order; track their index to map back to source.
+  // Must reset every render (not be memoized across renders).
   let taskIndex = -1;
 
   const components: Components = {
@@ -175,11 +162,7 @@ export function Preview({ source, dark, onToggleTask, basePath, blockRemoteImage
         taskIndex += 1;
         const idx = taskIndex;
         return (
-          <input
-            type="checkbox"
-            checked={!!props.checked}
-            onChange={() => onToggleTask(idx)}
-          />
+          <input type="checkbox" checked={!!props.checked} onChange={() => onToggleTask(idx)} />
         );
       }
       return <input {...props} />;
@@ -197,6 +180,8 @@ export function Preview({ source, dark, onToggleTask, basePath, blockRemoteImage
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
             } else if (SAFE_LINK.test(url)) {
               openUrl(url).catch(() => {});
+            } else if (isLocalMarkdownHref(url) && basePath && onOpenLocal) {
+              onOpenLocal(resolveRelativePath(basePath, url));
             }
           }}
           {...rest}
@@ -208,12 +193,10 @@ export function Preview({ source, dark, onToggleTask, basePath, blockRemoteImage
   };
 
   return (
-    <ReactMarkdown
-      remarkPlugins={remarkPlugins}
-      rehypePlugins={rehypePlugins}
-      components={components}
-    >
+    <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
       {source}
     </ReactMarkdown>
   );
 }
+
+export const Preview = memo(PreviewInner);

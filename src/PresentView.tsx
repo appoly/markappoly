@@ -8,12 +8,14 @@ export function PresentView({
   basePath,
   onClose,
   blockRemoteImages,
+  onOpenLocal,
 }: {
   source: string;
   dark: boolean;
   basePath?: string;
   onClose: () => void;
   blockRemoteImages?: boolean;
+  onOpenLocal?: (path: string) => void;
 }) {
   const slides = useMemo(() => {
     const parts = source
@@ -58,6 +60,7 @@ export function PresentView({
             dark={dark}
             basePath={basePath}
             onToggleTask={() => {}}
+            onOpenLocal={onOpenLocal}
             blockRemoteImages={blockRemoteImages}
           />
         </div>

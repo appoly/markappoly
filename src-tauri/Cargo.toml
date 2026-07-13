@@ -1,6 +1,6 @@
 [package]
 name = "markdown-viewer"
-version = "0.4.7"
+version = "0.5.0"
 description = "A fast, cross-platform Markdown viewer and editor built with Tauri."
 authors = ["Appoly Ltd"]
 edition = "2021"
@@ -29,4 +29,6 @@ tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
+notify = "7"
+notify-debouncer-mini = "0.5"
 

@@ -42,6 +42,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # Unit tests for pure helpers (paths, frontmatter, session, …).
+      - name: Unit tests
+        run: npm test
+
       # tsc + vite build — produces dist/, which tauri-build needs to validate
       # the config in the cargo check step below.
       - name: Typecheck & build frontend

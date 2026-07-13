@@ -2,16 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import CodeMirror, { ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { markdown } from "@codemirror/lang-markdown";
-import { search, openSearchPanel } from "@codemirror/search";
+import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import { openSearchPanel } from "@codemirror/search";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
-import { editorTheme, editorHighlight } from "./editorTheme";
-import { Preview, extractHeadings, type Heading } from "./markdown";
+import { extractHeadings, type Heading, Preview } from "./markdown";
 import { FindBar } from "./FindBar";
 import { Sidebar, type FileEntry } from "./Sidebar";
 import { TabBar } from "./TabBar";
@@ -40,20 +39,16 @@ import {
   htmlDocument,
   markdownToDocxBase64,
 } from "./export";
+import { EditorPane, SplitView } from "./EditorPane";
+import { FrontmatterBar } from "./FrontmatterBar";
+import { useLiveReload } from "./useLiveReload";
+import { useScrollSpy } from "./useScrollSpy";
+import { loadSession, saveSession } from "./session";
+import { basename, dirOf, MD_EXTENSIONS } from "./paths";
+import { makeDoc, type Doc, type ExportKind, type Mode } from "./types";
+import { WELCOME } from "./welcome";
 import "./App.css";
 
-type Mode = "preview" | "edit" | "split";
-type ExportKind = "txt" | "html" | "json" | "docx" | "pdf";
-
-type Doc = {
-  id: string;
-  path: string | null;
-  source: string;
-  dirty: boolean;
-  mtime: number | null;
-};
-
-const MD_EXTENSIONS = ["md", "markdown", "mdown", "mkd", "mkdn", "txt"];
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const PANDOC_FORMATS = [
   { ext: "docx", label: "Word via Pandoc (.docx)" },
@@ -63,233 +58,28 @@ const PANDOC_FORMATS = [
   { ext: "tex", label: "LaTeX (.tex)" },
 ];
 
-const WELCOME = `# Welcome to Markappoly
-
-> **Pass Go, straight to preview.** A fast, native Markdown viewer and editor for macOS, Windows, and Linux.
-
-You're looking at a live preview. Press **⌘E** to open the editor and again to come back, or open your own file with **⌘O**. This document shows what Markappoly can render.
-
-## Formatting
-
-Markappoly speaks **GitHub-Flavored Markdown**: **bold**, *italic*, ~~strikethrough~~, \`inline code\`, and [links](https://github.com/appoly/markappoly).
-
-> [!TIP]
-> Press **⌘⇧E** for a split view with the editor and this preview side by side, scrolling together.
-
-### Lists and tasks
-
-- Bulleted lists
-- with nested items
-  - like this one
-- [x] Task boxes you can tick
-- [ ] Tick this one and watch it save back to the source
-
-1. Numbered lists too
-2. in the order you write them
-
-### Tables
-
-| Action         | Shortcut | Notes                          |
-| -------------- | -------- | ------------------------------ |
-| Open file      | ⌘O       | or drag a file onto the window |
-| Edit / preview | ⌘E       | toggle back and forth          |
-| Split view     | ⌘⇧E      | editor and preview together    |
-| Find           | ⌘F       | search the open document       |
-| Present        | ⌘⇧P      | slides split on \`---\`          |
-
-## Code
-
-Fenced code blocks are syntax-highlighted:
-
-\`\`\`js
-function greet(name) {
-  return "Hello, " + name + "!";
-}
-
-greet("Markappoly");
-\`\`\`
-
-## Math
-
-Inline math like $E = mc^2$ renders with KaTeX, and so do display blocks:
-
-$$
-\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}
-$$
-
-## Diagrams
-
-Mermaid diagrams render straight from a fenced \`mermaid\` block:
-
-\`\`\`mermaid
-flowchart LR
-  A[Open or write] --> B[Preview]
-  B --> C{Happy?}
-  C -->|Yes| D[Export]
-  C -->|No| A
-\`\`\`
-
----
-
-### Do more
-
-- Open several files as **tabs**, then **Compare** two of them side by side
-- Browse a whole folder from the sidebar (**⌘⇧O**) and search across all of it
-- Paste or drag an image into the editor to attach it
-- Export to Word and PDF, or to more formats when Pandoc is installed
-
-New here? The full guide lives in the [user manual](https://github.com/appoly/markappoly/wiki).
-
-> Open a file with ⌘O, or just start typing in **Edit** mode.
-`;
-
-function basename(path: string | null): string {
-  if (!path) return "Untitled";
-  return path.split(/[\\/]/).pop() ?? "Untitled";
-}
-
-function dirOf(path: string | null): string | undefined {
-  if (!path) return undefined;
-  const cut = path.replace(/[\\/][^\\/]*$/, "");
-  return cut === path ? undefined : cut;
-}
-
 function docName(d: Doc): string {
   return d.path ? basename(d.path) : "Untitled";
 }
 
-function makeDoc(partial: Partial<Doc> = {}): Doc {
-  return {
-    id: crypto.randomUUID(),
-    path: null,
-    source: "",
-    dirty: false,
-    mtime: null,
-    ...partial,
-  };
-}
-
-const EDITOR_BASE: Extension[] = [editorTheme, editorHighlight, EditorView.lineWrapping];
-
-/** The CodeMirror source editor, shared by the Edit and Split views. */
-function EditorPane({
-  docId,
-  value,
-  cmRef,
-  extra,
-  onChange,
-}: {
-  docId: string;
-  value: string;
-  cmRef: React.RefObject<ReactCodeMirrorRef | null>;
-  extra: Extension[];
-  onChange: (v: string) => void;
-}) {
-  return (
-    <CodeMirror
-      key={docId}
-      ref={cmRef}
-      className="editor"
-      value={value}
-      height="100%"
-      theme="none"
-      basicSetup={{ foldGutter: false, syntaxHighlighting: false }}
-      extensions={[markdown(), search(), ...EDITOR_BASE, ...extra]}
-      onChange={onChange}
-      onCreateEditor={(view) => {
-        // WKWebView can lay the gutter out before the container has its final
-        // size, stacking line numbers above the text. Re-measure once layout
-        // has settled so the gutter sits beside the content.
-        requestAnimationFrame(() => view.requestMeasure());
-        setTimeout(() => view.requestMeasure(), 60);
-      }}
-    />
-  );
-}
-
-/** Editor and live preview side by side, with linked scrolling. */
-function SplitView({
-  docId,
-  value,
-  cmRef,
-  extra,
-  onChange,
-  dark,
-  basePath,
-  onToggleTask,
-  blockRemoteImages,
-}: {
-  docId: string;
-  value: string;
-  cmRef: React.RefObject<ReactCodeMirrorRef | null>;
-  extra: Extension[];
-  onChange: (v: string) => void;
-  dark: boolean;
-  basePath?: string;
-  onToggleTask: (i: number) => void;
-  blockRemoteImages?: boolean;
-}) {
-  const previewRef = useRef<HTMLDivElement>(null);
-  const lock = useRef(false);
-
-  useEffect(() => {
-    const scroller = cmRef.current?.view?.scrollDOM;
-    const preview = previewRef.current;
-    if (!scroller || !preview) return;
-    const sync = (from: HTMLElement, to: HTMLElement) => {
-      if (lock.current) return;
-      lock.current = true;
-      const max = Math.max(1, from.scrollHeight - from.clientHeight);
-      to.scrollTop = (from.scrollTop / max) * (to.scrollHeight - to.clientHeight);
-      requestAnimationFrame(() => (lock.current = false));
-    };
-    const onEditor = () => sync(scroller, preview);
-    const onPreview = () => sync(preview, scroller);
-    scroller.addEventListener("scroll", onEditor);
-    preview.addEventListener("scroll", onPreview);
-    return () => {
-      scroller.removeEventListener("scroll", onEditor);
-      preview.removeEventListener("scroll", onPreview);
-    };
-  }, [cmRef, docId]);
-
-  return (
-    <div className="split">
-      <div className="split-pane split-editor">
-        <EditorPane docId={docId} value={value} cmRef={cmRef} extra={extra} onChange={onChange} />
-      </div>
-      <div className="split-pane split-preview" ref={previewRef}>
-        <div className="markdown-body">
-          <Preview
-            source={value}
-            dark={dark}
-            basePath={basePath}
-            onToggleTask={onToggleTask}
-            blockRemoteImages={blockRemoteImages}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function App() {
   const prefs = usePreferences();
+  const session = useRef(loadSession());
   const first = useRef<Doc | null>(null);
   if (first.current === null) first.current = makeDoc({ source: WELCOME });
 
   const [docs, setDocs] = useState<Doc[]>(() => [first.current!]);
   const [activeId, setActiveId] = useState<string>(() => first.current!.id);
-  const [mode, setMode] = useState<Mode>("preview");
+  const [mode, setMode] = useState<Mode>(session.current.mode);
   const [compare, setCompare] = useState<{ aId: string; bId: string } | null>(null);
   const [files, setFiles] = useState<FileEntry[]>([]);
-  const [folderPath, setFolderPath] = useState<string | null>(null);
+  const [folderPath, setFolderPath] = useState<string | null>(session.current.folderPath);
   const [findOpen, setFindOpen] = useState(false);
   const [presenting, setPresenting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pandocOk, setPandocOk] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
 
-  // Always-fresh references so stable callbacks can read current state.
   const docsRef = useRef(docs);
   docsRef.current = docs;
   const activeIdRef = useRef(activeId);
@@ -298,7 +88,8 @@ function App() {
   modeRef.current = mode;
 
   const cmRef = useRef<ReactCodeMirrorRef>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLElement | null>(null);
+  const [contentEl, setContentEl] = useState<HTMLElement | null>(null);
 
   const active = docs.find((d) => d.id === activeId) ?? docs[0];
   const source = active.source;
@@ -310,6 +101,12 @@ function App() {
   const wordCount = useMemo(() => (source.trim().match(/\S+/g) || []).length, [source]);
   const readMin = Math.max(1, Math.ceil(wordCount / 200));
 
+  const activeHeadingSlug = useScrollSpy(
+    contentEl,
+    [source, mode, active.id],
+    mode === "preview" && !compare,
+  );
+
   const getActive = useCallback(
     () => docsRef.current.find((d) => d.id === activeIdRef.current) ?? docsRef.current[0],
     [],
@@ -317,6 +114,8 @@ function App() {
   const patchDocById = useCallback((id: string, patch: Partial<Doc>) => {
     setDocs((ds) => ds.map((d) => (d.id === id ? { ...d, ...patch } : d)));
   }, []);
+
+  useLiveReload(docs, patchDocById, docsRef);
 
   // ----- Tabs -----
   const selectTab = useCallback((id: string) => {
@@ -332,11 +131,19 @@ function App() {
     setMode("edit");
   }, []);
 
-  const closeTab = useCallback((id: string) => {
+  const closeTab = useCallback(async (id: string) => {
     const cur = docsRef.current;
     const doc = cur.find((d) => d.id === id);
     if (!doc) return;
-    if (doc.dirty && !window.confirm(`Discard unsaved changes to ${docName(doc)}?`)) return;
+    if (doc.dirty) {
+      const discard = await ask(`Discard unsaved changes to ${docName(doc)}?`, {
+        title: "Unsaved changes",
+        kind: "warning",
+        okLabel: "Discard",
+        cancelLabel: "Cancel",
+      });
+      if (!discard) return;
+    }
     const idx = cur.findIndex((d) => d.id === id);
     const next = cur.filter((d) => d.id !== id);
     if (next.length === 0) {
@@ -371,7 +178,6 @@ function App() {
       }
       const doc = makeDoc({ path, source: text, dirty: false, mtime });
       setDocs((ds) => {
-        // Replace a single untouched welcome tab so opening a file doesn't leave it behind.
         const onlyWelcome =
           ds.length === 1 && ds[0].path === null && !ds[0].dirty && ds[0].source === WELCOME;
         return onlyWelcome ? [doc] : [...ds, doc];
@@ -409,9 +215,7 @@ function App() {
     if (typeof selected === "string") openPath(selected);
   }, [openPath]);
 
-  const openFolder = useCallback(async () => {
-    const dir = await open({ directory: true, multiple: false });
-    if (typeof dir !== "string") return;
+  const loadFolder = useCallback(async (dir: string) => {
     setFolderPath(dir);
     try {
       setFiles(await invoke<FileEntry[]>("list_markdown_dir", { path: dir }));
@@ -420,6 +224,12 @@ function App() {
       setFiles([]);
     }
   }, []);
+
+  const openFolder = useCallback(async () => {
+    const dir = await open({ directory: true, multiple: false });
+    if (typeof dir !== "string") return;
+    await loadFolder(dir);
+  }, [loadFolder]);
 
   const reloadFile = useCallback(async () => {
     const doc = getActive();
@@ -462,7 +272,8 @@ function App() {
       if (kind === "pdf") {
         setCompare(null);
         setMode("preview");
-        setTimeout(() => window.print(), 60);
+        // Let the preview paint, then print with print-only CSS (page breaks on hr).
+        setTimeout(() => window.print(), 80);
         return;
       }
       if (kind === "docx") {
@@ -512,14 +323,26 @@ function App() {
     [getActive],
   );
 
-  const copyAsHtml = useCallback(() => {
+  const copyAsHtml = useCallback(async () => {
     const html = markdownToHtml(getActive().source);
+    try {
+      if (navigator.clipboard && "write" in navigator.clipboard) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([html], { type: "text/plain" }),
+          }),
+        ]);
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
     const holder = document.createElement("div");
     holder.innerHTML = html;
     holder.setAttribute("contenteditable", "true");
     holder.style.position = "fixed";
     holder.style.left = "-9999px";
-    holder.style.top = "0";
     document.body.appendChild(holder);
     const range = document.createRange();
     range.selectNodeContents(holder);
@@ -535,7 +358,7 @@ function App() {
     document.body.removeChild(holder);
   }, [getActive]);
 
-  // ----- Image attachments (paste / drop into the editor) -----
+  // ----- Image attachments -----
   const attachImage = useCallback(
     async (
       view: EditorView,
@@ -602,8 +425,6 @@ function App() {
   );
   const editorExtras = useMemo(() => {
     const ext: Extension[] = [editorImageExt];
-    // Order matters: the image handler (in editorImageExt) runs before the
-    // paste-as-markdown handler, so image pastes still attach as files.
     if (prefs.pasteAsMarkdown) ext.push(pasteMarkdown);
     if (prefs.spellcheck) ext.push(spellcheck);
     if (prefs.focusMode) ext.push(focusMode);
@@ -622,7 +443,6 @@ function App() {
     if (view) fn(view);
   }, []);
 
-  // ----- Compare -----
   const startCompare = useCallback(() => {
     const cur = docsRef.current;
     if (cur.length < 2) return;
@@ -631,24 +451,20 @@ function App() {
     setCompare({ aId: a, bId: b });
   }, []);
 
-  // ----- Formatting (operate on the active CodeMirror selection) -----
-  const wrapSelection = useCallback(
-    (before: string, after = before, placeholder = "") => {
-      const view = cmRef.current?.view;
-      if (!view) return;
-      const { from, to } = view.state.selection.main;
-      const selected = view.state.sliceDoc(from, to) || placeholder;
-      view.dispatch({
-        changes: { from, to, insert: before + selected + after },
-        selection: {
-          anchor: from + before.length,
-          head: from + before.length + selected.length,
-        },
-      });
-      view.focus();
-    },
-    [],
-  );
+  const wrapSelection = useCallback((before: string, after = before, placeholder = "") => {
+    const view = cmRef.current?.view;
+    if (!view) return;
+    const { from, to } = view.state.selection.main;
+    const selected = view.state.sliceDoc(from, to) || placeholder;
+    view.dispatch({
+      changes: { from, to, insert: before + selected + after },
+      selection: {
+        anchor: from + before.length,
+        head: from + before.length + selected.length,
+      },
+    });
+    view.focus();
+  }, []);
 
   const prefixLines = useCallback((prefix: string) => {
     const view = cmRef.current?.view;
@@ -689,7 +505,6 @@ function App() {
     view.focus();
   }, []);
 
-  // ----- Interactive task checkboxes (toggle writes back to source) -----
   const toggleTask = useCallback(
     (index: number) => {
       const doc = getActive();
@@ -705,7 +520,6 @@ function App() {
     [getActive, patchDocById],
   );
 
-  // ----- Outline navigation -----
   const gotoHeading = useCallback(
     (h: Heading) => {
       if (mode === "edit" || mode === "split") {
@@ -717,36 +531,99 @@ function App() {
           view.focus();
         }
       } else {
-        document
-          .getElementById(h.slug)
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        document.getElementById(h.slug)?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     },
     [mode],
   );
 
-  // ----- Live reload: poll the active file's mtime -----
+  // ----- Session restore (once) -----
   useEffect(() => {
-    const path = active.path;
-    const docId = active.id;
-    if (!path) return;
-    const timer = setInterval(async () => {
-      const cur = docsRef.current.find((d) => d.id === docId);
-      if (!cur || cur.dirty) return;
-      try {
-        const m = await invoke<number>("file_mtime", { path });
-        if (cur.mtime != null && m !== cur.mtime) {
-          const text = await invoke<string>("read_file", { path });
-          patchDocById(docId, { source: text, dirty: false, mtime: m });
-        }
-      } catch {
-        /* file may be mid-write or removed */
+    let cancelled = false;
+    (async () => {
+      const s = session.current;
+      // Restore folder first so the sidebar is ready.
+      if (s.folderPath) {
+        const isDir = await invoke<boolean>("path_is_dir", { path: s.folderPath }).catch(
+          () => false,
+        );
+        if (isDir) await loadFolder(s.folderPath);
+        else setFolderPath(null);
       }
-    }, 1200);
-    return () => clearInterval(timer);
-  }, [active.id, active.path, patchDocById]);
 
-  // ----- Drag a file onto the window: open Markdown, attach images -----
+      const validPaths: string[] = [];
+      for (const p of s.paths) {
+        const ok = await invoke<boolean>("path_exists", { path: p }).catch(() => false);
+        if (ok) validPaths.push(p);
+      }
+
+      if (cancelled) return;
+
+      if (validPaths.length > 0) {
+        // Open without replacing mid-loop; openPath de-dupes and swaps welcome on first.
+        for (const p of validPaths) {
+          await openPath(p);
+        }
+        if (s.activePath && validPaths.includes(s.activePath)) {
+          // openPath already set active to the last opened; re-select preferred.
+          const match = docsRef.current.find((d) => d.path === s.activePath);
+          if (match) setActiveId(match.id);
+        }
+        setMode(s.mode);
+      }
+      if (!cancelled) setSessionReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ----- Persist session -----
+  useEffect(() => {
+    if (!sessionReady) return;
+    const paths = docs.map((d) => d.path).filter((p): p is string => !!p);
+    const activeDoc = docs.find((d) => d.id === activeId);
+    saveSession({
+      version: 1,
+      paths,
+      activePath: activeDoc?.path ?? null,
+      mode,
+      folderPath,
+    });
+  }, [docs, activeId, mode, folderPath, sessionReady]);
+
+  // ----- Quit guard for dirty docs -----
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow()
+      .onCloseRequested(async (event) => {
+        const dirtyDocs = docsRef.current.filter((d) => d.dirty);
+        if (dirtyDocs.length === 0) return;
+        event.preventDefault();
+        const names = dirtyDocs.map(docName).join(", ");
+        const ok = await ask(
+          `You have unsaved changes in ${names}. Quit without saving?`,
+          {
+            title: "Unsaved changes",
+            kind: "warning",
+            okLabel: "Quit",
+            cancelLabel: "Cancel",
+          },
+        );
+        if (ok) {
+          // Mark clean so a second close isn't blocked, then destroy.
+          setDocs((ds) => ds.map((d) => (d.dirty ? { ...d, dirty: false } : d)));
+          await getCurrentWindow().destroy();
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => unlisten?.();
+  }, []);
+
+  // ----- Drag a file onto the window -----
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     getCurrentWebview()
@@ -864,7 +741,6 @@ function App() {
         if (p) openPath(p);
       })
       .catch(() => {});
-    // Files macOS delivered before the window was ready (cold-start "open with").
     invoke<string[]>("take_pending_open")
       .then((paths) => paths.forEach((p) => openPath(p)))
       .catch(() => {});
@@ -889,7 +765,7 @@ function App() {
       .catch(() => {});
   }, []);
 
-  // ----- Keyboard shortcuts (chords not owned by the native menu) -----
+  // ----- Keyboard shortcuts -----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -978,7 +854,11 @@ function App() {
       ? [
           { type: "header", label: "Via Pandoc" } as MenuEntry,
           ...PANDOC_FORMATS.map(
-            (f): MenuEntry => ({ type: "item", label: f.label, onSelect: () => exportPandoc(f.ext) }),
+            (f): MenuEntry => ({
+              type: "item",
+              label: f.label,
+              onSelect: () => exportPandoc(f.ext),
+            }),
           ),
         ]
       : []),
@@ -986,12 +866,32 @@ function App() {
 
   const overflowItems: MenuEntry[] = [
     { type: "item", label: "Settings…", onSelect: () => setSettingsOpen(true) },
-    { type: "item", label: "Compare two files…", onSelect: startCompare, disabled: docs.length < 2 },
+    {
+      type: "item",
+      label: "Compare two files…",
+      onSelect: startCompare,
+      disabled: docs.length < 2,
+    },
     { type: "separator" },
     { type: "header", label: "Theme" },
-    { type: "item", label: "System", onSelect: () => prefs.setTheme("system"), checked: prefs.theme === "system" },
-    { type: "item", label: "Light", onSelect: () => prefs.setTheme("light"), checked: prefs.theme === "light" },
-    { type: "item", label: "Dark", onSelect: () => prefs.setTheme("dark"), checked: prefs.theme === "dark" },
+    {
+      type: "item",
+      label: "System",
+      onSelect: () => prefs.setTheme("system"),
+      checked: prefs.theme === "system",
+    },
+    {
+      type: "item",
+      label: "Light",
+      onSelect: () => prefs.setTheme("light"),
+      checked: prefs.theme === "light",
+    },
+    {
+      type: "item",
+      label: "Dark",
+      onSelect: () => prefs.setTheme("dark"),
+      checked: prefs.theme === "dark",
+    },
   ];
 
   return (
@@ -1102,6 +1002,7 @@ function App() {
             onOpenAtLine={openPathAtLine}
             headings={headings}
             onGotoHeading={gotoHeading}
+            activeHeadingSlug={activeHeadingSlug}
           />
         )}
 
@@ -1145,13 +1046,25 @@ function App() {
           ) : (
             editing && (
               <div className="format-bar">
-                <button className="fmt fmt-b" title="Bold (⌘B)" onClick={() => wrapSelection("**", "**", "bold")}>
+                <button
+                  className="fmt fmt-b"
+                  title="Bold (⌘B)"
+                  onClick={() => wrapSelection("**", "**", "bold")}
+                >
                   B
                 </button>
-                <button className="fmt fmt-i" title="Italic (⌘I)" onClick={() => wrapSelection("*", "*", "italic")}>
+                <button
+                  className="fmt fmt-i"
+                  title="Italic (⌘I)"
+                  onClick={() => wrapSelection("*", "*", "italic")}
+                >
                   I
                 </button>
-                <button className="fmt fmt-s" title="Strikethrough" onClick={() => wrapSelection("~~", "~~", "text")}>
+                <button
+                  className="fmt fmt-s"
+                  title="Strikethrough"
+                  onClick={() => wrapSelection("~~", "~~", "text")}
+                >
                   S
                 </button>
                 <span className="sep" />
@@ -1178,11 +1091,15 @@ function App() {
                   ❝ Quote
                 </button>
                 <span className="sep" />
-                <button className="fmt" title="Inline code" onClick={() => wrapSelection("`", "`", "code")}>
+                <button
+                  className="fmt"
+                  title="Inline code"
+                  onClick={() => wrapSelection("`", "`", "code")}
+                >
                   {"</>"}
                 </button>
                 <button className="fmt" title="Code block" onClick={insertCodeBlock}>
-                  { } Block
+                  {"{ }"} Block
                 </button>
                 <button className="fmt" title="Link (⌘K)" onClick={insertLink}>
                   🔗 Link
@@ -1194,10 +1111,18 @@ function App() {
                 <button className="fmt" title="Add row to table" onClick={() => runOnEditor(addRow)}>
                   + Row
                 </button>
-                <button className="fmt" title="Add column to table" onClick={() => runOnEditor(addColumn)}>
+                <button
+                  className="fmt"
+                  title="Add column to table"
+                  onClick={() => runOnEditor(addColumn)}
+                >
                   + Col
                 </button>
-                <button className="fmt" title="Align table columns" onClick={() => runOnEditor(formatTable)}>
+                <button
+                  className="fmt"
+                  title="Align table columns"
+                  onClick={() => runOnEditor(formatTable)}
+                >
                   ↹ Align
                 </button>
               </div>
@@ -1208,16 +1133,24 @@ function App() {
             <FindBar container={contentRef.current} onClose={() => setFindOpen(false)} />
           )}
 
-          <main className="content" ref={contentRef}>
+          <main
+            className="content"
+            ref={(el) => {
+              contentRef.current = el;
+              setContentEl(el);
+            }}
+          >
             {compare ? (
               <DiffView a={docA?.source ?? ""} b={docB?.source ?? ""} dark={prefs.dark} />
             ) : mode === "preview" ? (
               <div className="markdown-body">
+                <FrontmatterBar source={source} />
                 <Preview
                   source={source}
                   dark={prefs.dark}
                   basePath={baseDir}
                   onToggleTask={toggleTask}
+                  onOpenLocal={openPath}
                   blockRemoteImages={prefs.blockRemoteImages}
                 />
               </div>
@@ -1231,6 +1164,7 @@ function App() {
                 dark={prefs.dark}
                 basePath={baseDir}
                 onToggleTask={toggleTask}
+                onOpenLocal={openPath}
                 blockRemoteImages={prefs.blockRemoteImages}
               />
             ) : (
@@ -1252,7 +1186,13 @@ function App() {
             </span>
             <span>
               {wordCount} words · {readMin} min read
-              {compare ? " · Compare" : mode === "edit" ? " · Edit" : mode === "split" ? " · Split" : ""}
+              {compare
+                ? " · Compare"
+                : mode === "edit"
+                  ? " · Edit"
+                  : mode === "split"
+                    ? " · Split"
+                    : ""}
             </span>
           </footer>
         </div>
@@ -1265,6 +1205,7 @@ function App() {
           basePath={baseDir}
           onClose={() => setPresenting(false)}
           blockRemoteImages={prefs.blockRemoteImages}
+          onOpenLocal={openPath}
         />
       )}
 
