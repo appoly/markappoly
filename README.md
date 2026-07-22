@@ -43,11 +43,26 @@ After the first launch the app keeps itself up to date: when a new version ships
 - Outline sidebar (with scroll spy) and folder tree browser, find-in-document (⌘F), and search across a whole folder
 - Open Recent, word count and reading time, live reload when the file changes on disk
 - Session restore: tabs, folder, and view mode come back when you relaunch
-- Adjustable reading width, font, and line spacing, plus your own custom CSS — and an option to block remote images
+- Adjustable reading width, font, and line spacing, plus your own custom CSS, and an option to block remote images
 - YAML frontmatter chrome (title, tags, date) above the preview
 - Relative Markdown links open sibling notes as tabs
 - **Compare** two open files side by side as a diff
 - **Present mode** (⌘⇧P): turn the document into slides, split on `---`
+
+**Notes and linking**
+
+Point Markappoly at a folder of notes (an Obsidian vault works as-is) and it behaves like a knowledge base:
+
+- `[[Wiki links]]` jump between notes by name; type `[[` in the editor and it autocompletes from the folder
+- A **backlinks** panel in the sidebar shows every note that links to the one you're reading, with the line it came from
+- `![[Note]]` embeds a whole note into the preview; `![[Note#Section]]` embeds just that section
+- `#tags` render as clickable chips, in the text and in frontmatter. Click one to search the folder for it
+- Hover any internal link and a small rendered preview of the target pops up
+- **Quick switcher** (⌘P): fuzzy-find any file, or type `>` for commands and `#` for tags
+- **Local graph** (⌘⇧G): the current note in the middle, everything it links to and from around it
+- **Bookmarks** (⌘D) pin your most-used files to the top of the sidebar
+- Frontmatter is editable as **properties**: typed fields that write themselves back as YAML
+- More preview syntax: `==highlights==`, `%%comments%%` that stay hidden, foldable callouts (`> [!note]-`), and Obsidian's extra callout types (info, question, danger, and friends)
 
 **Editing**
 - Toggle to a CodeMirror source editor with a formatting toolbar, or a **split view** (⌘⇧E) with editor and preview side by side, scrolling together
@@ -69,11 +84,12 @@ For a walkthrough of every feature, see the **[user manual](https://github.com/a
 | Action | Shortcut | Action | Shortcut |
 | ------ | -------- | ------ | -------- |
 | Open | ⌘O | Find | ⌘F |
-| Open folder | ⌘⇧O | Toggle edit/preview | ⌘E |
-| Save | ⌘S | Split view | ⌘⇧E |
-| Reload from disk | ⌘R | Present | ⌘⇧P |
-| Toggle sidebar | ⌘\ | Zoom | ⌘+ / ⌘- / ⌘0 |
-| Bold / Italic | ⌘B / ⌘I | Link | ⌘K |
+| Open folder | ⌘⇧O | Quick switcher | ⌘P |
+| Save | ⌘S | Toggle edit/preview | ⌘E |
+| Reload from disk | ⌘R | Split view | ⌘⇧E |
+| Bookmark | ⌘D | Present | ⌘⇧P |
+| Toggle sidebar | ⌘\ | Local graph | ⌘⇧G |
+| Bold / Italic / Link | ⌘B / ⌘I / ⌘K | Zoom | ⌘+ / ⌘- / ⌘0 |
 | Settings | ⌘, | New tab / Close | ⌘T / ⌘W |
 
 ## Build from source

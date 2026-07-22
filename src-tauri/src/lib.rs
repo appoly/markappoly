@@ -254,6 +254,222 @@ fn search_dir(path: String, query: String) -> Result<Vec<SearchHit>, String> {
     Ok(hits)
 }
 
+// ---------- Vault link/tag index ----------
+
+#[derive(Serialize)]
+struct LinkRef {
+    target: String,
+    line: u32,
+    text: String,
+    wiki: bool,
+}
+
+#[derive(Serialize)]
+struct FileIndex {
+    path: String,
+    name: String,
+    links: Vec<LinkRef>,
+    tags: Vec<String>,
+}
+
+fn push_tag(tags: &mut Vec<String>, raw: &str) {
+    let t = raw
+        .trim()
+        .trim_start_matches('#')
+        .trim_matches(|c| c == '"' || c == '\'')
+        .to_string();
+    if t.is_empty() || tags.contains(&t) {
+        return;
+    }
+    tags.push(t);
+}
+
+fn context_snippet(line: &str) -> String {
+    line.trim().chars().take(200).collect()
+}
+
+fn scan_wiki_links(line: &str, lineno: u32, out: &mut Vec<LinkRef>) {
+    let mut rest = line;
+    while let Some(start) = rest.find("[[") {
+        let after = &rest[start + 2..];
+        let Some(end) = after.find("]]") else { break };
+        let target = &after[..end];
+        if !target.is_empty() && !target.contains('[') && !target.contains('\n') {
+            out.push(LinkRef {
+                target: target.to_string(),
+                line: lineno,
+                text: context_snippet(line),
+                wiki: true,
+            });
+        }
+        rest = &after[end + 2..];
+    }
+}
+
+fn scan_md_links(line: &str, lineno: u32, out: &mut Vec<LinkRef>) {
+    let mut rest = line;
+    while let Some(pos) = rest.find("](") {
+        let after = &rest[pos + 2..];
+        let Some(end) = after.find(')') else { break };
+        let target = after[..end].trim().trim_matches(|c| c == '<' || c == '>');
+        rest = &after[end + 1..];
+        let lower = target.to_lowercase();
+        if target.is_empty()
+            || target.starts_with('#')
+            || lower.starts_with("http:")
+            || lower.starts_with("https:")
+            || lower.starts_with("mailto:")
+        {
+            continue;
+        }
+        let bare = target.split(['#', '?']).next().unwrap_or("").to_lowercase();
+        if MD_EXTS.iter().any(|e| bare.ends_with(&format!(".{}", e))) {
+            out.push(LinkRef {
+                target: target.to_string(),
+                line: lineno,
+                text: context_snippet(line),
+                wiki: false,
+            });
+        }
+    }
+}
+
+fn scan_tags(line: &str, tags: &mut Vec<String>) {
+    for token in line.split_whitespace() {
+        let Some(rest) = token.strip_prefix('#') else {
+            continue;
+        };
+        let end = rest
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '/'))
+            .unwrap_or(rest.len());
+        let cleaned = &rest[..end];
+        // Require at least one non-digit so "#123" (an issue ref) is not a tag.
+        if cleaned.is_empty() || cleaned.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        push_tag(tags, cleaned);
+    }
+}
+
+fn index_file_content(content: &str) -> (Vec<LinkRef>, Vec<String>) {
+    let mut links = Vec::new();
+    let mut tags: Vec<String> = Vec::new();
+    let mut in_fence = false;
+    let mut in_frontmatter = false;
+    let mut in_fm_tag_list = false;
+    for (i, line) in content.lines().enumerate() {
+        let lineno = (i as u32) + 1;
+        if i == 0 && line.trim_end() == "---" {
+            in_frontmatter = true;
+            continue;
+        }
+        if in_frontmatter {
+            let t = line.trim();
+            if t == "---" {
+                in_frontmatter = false;
+                continue;
+            }
+            if in_fm_tag_list {
+                if let Some(item) = t.strip_prefix('-') {
+                    push_tag(&mut tags, item);
+                    continue;
+                }
+                in_fm_tag_list = false;
+            }
+            let lower = t.to_lowercase();
+            for key in ["tags:", "tag:", "keywords:"] {
+                if let Some(val) = lower.strip_prefix(key).map(|_| t[key.len()..].trim()) {
+                    if val.is_empty() {
+                        in_fm_tag_list = true;
+                    } else {
+                        let inner = val.trim_start_matches('[').trim_end_matches(']');
+                        for part in inner.split(',') {
+                            push_tag(&mut tags, part);
+                        }
+                    }
+                    break;
+                }
+            }
+            continue;
+        }
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        scan_wiki_links(line, lineno, &mut links);
+        scan_md_links(line, lineno, &mut links);
+        scan_tags(line, &mut tags);
+    }
+    (links, tags)
+}
+
+/// Outgoing links (wiki + relative Markdown) and tags for every file in a
+/// folder. Powers wiki-link resolution, the backlinks panel, and the graph.
+#[tauri::command]
+fn index_dir(path: String) -> Result<Vec<FileIndex>, String> {
+    let base = PathBuf::from(&path);
+    if !base.is_dir() {
+        return Err("not a directory".into());
+    }
+    let mut files = Vec::new();
+    collect_markdown(&base, &base, &mut files);
+    let mut out = Vec::new();
+    for f in files {
+        let Ok(content) = fs::read_to_string(&f.path) else {
+            continue;
+        };
+        let (links, tags) = index_file_content(&content);
+        out.push(FileIndex {
+            path: f.path,
+            name: f.name,
+            links,
+            tags,
+        });
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::index_file_content;
+
+    #[test]
+    fn indexes_wiki_and_md_links_and_tags() {
+        let src = "---\ntags: [a, b]\n---\nSee [[Other Note]] and [x](./x.md) #tag\n```\n[[not-indexed]]\n```\n";
+        let (links, tags) = index_file_content(src);
+        assert_eq!(links.len(), 2);
+        assert!(links[0].wiki);
+        assert_eq!(links[0].target, "Other Note");
+        assert_eq!(links[1].target, "./x.md");
+        assert!(!links[1].wiki);
+        assert_eq!(tags, vec!["a", "b", "tag"]);
+    }
+
+    #[test]
+    fn skips_numeric_refs_and_web_links() {
+        let (links, tags) = index_file_content("Issue #123, #real-tag, [w](https://x.com/a.md)\n");
+        assert!(links.is_empty());
+        assert_eq!(tags, vec!["real-tag"]);
+    }
+
+    #[test]
+    fn collects_list_style_frontmatter_tags() {
+        let (_, tags) = index_file_content("---\ntags:\n  - one\n  - two\n---\nBody\n");
+        assert_eq!(tags, vec!["one", "two"]);
+    }
+
+    #[test]
+    fn records_context_lines_for_backlinks() {
+        let (links, _) = index_file_content("intro\n\nA line with [[Target]] in it\n");
+        assert_eq!(links[0].line, 3);
+        assert_eq!(links[0].text, "A line with [[Target]] in it");
+    }
+}
+
 // ---------- Image attachments ----------
 
 /// Save a pasted/dropped image next to the current document (in an `assets/`
@@ -506,6 +722,12 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>, recents: &[String]) -> tauri::
         )
         .item(&MenuItemBuilder::with_id("reload", "Reload from Disk").build(app)?)
         .separator()
+        .item(
+            &MenuItemBuilder::with_id("bookmark", "Bookmark This File")
+                .accelerator("CmdOrCtrl+D")
+                .build(app)?,
+        )
+        .separator()
         .item(&export_menu)
         .build()?;
 
@@ -527,6 +749,17 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>, recents: &[String]) -> tauri::
         .build()?;
 
     let view_menu = SubmenuBuilder::new(app, "View")
+        .item(
+            &MenuItemBuilder::with_id("quick_switcher", "Quick Switcher…")
+                .accelerator("CmdOrCtrl+P")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("local_graph", "Local Graph")
+                .accelerator("CmdOrCtrl+Shift+G")
+                .build(app)?,
+        )
+        .separator()
         .item(
             &MenuItemBuilder::with_id("toggle_mode", "Toggle Edit / Preview")
                 .accelerator("CmdOrCtrl+E")
@@ -608,6 +841,7 @@ pub fn run() {
             write_file_base64,
             file_mtime,
             list_markdown_dir,
+            index_dir,
             cli_file_arg,
             take_pending_open,
             search_dir,

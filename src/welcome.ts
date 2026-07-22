@@ -24,13 +24,14 @@ Markappoly speaks **GitHub-Flavored Markdown**: **bold**, *italic*, ~~strikethro
 
 ### Tables
 
-| Action         | Shortcut | Notes                          |
-| -------------- | -------- | ------------------------------ |
-| Open file      | ⌘O       | or drag a file onto the window |
-| Edit / preview | ⌘E       | toggle back and forth          |
-| Split view     | ⌘⇧E      | editor and preview together    |
-| Find           | ⌘F       | search the open document       |
-| Present        | ⌘⇧P      | slides split on \`---\`          |
+| Action         | Shortcut | Notes                            |
+| -------------- | -------- | -------------------------------- |
+| Open file      | ⌘O       | or drag a file onto the window   |
+| Quick switcher | ⌘P       | jump to any file in the folder   |
+| Edit / preview | ⌘E       | toggle back and forth            |
+| Split view     | ⌘⇧E      | editor and preview together      |
+| Find           | ⌘F       | search the open document         |
+| Present        | ⌘⇧P      | slides split on \`---\`            |
 
 ## Code
 
@@ -64,6 +65,20 @@ flowchart LR
   C -->|No| A
 \`\`\`
 
+## Notes that link to each other
+
+Open a folder (**⌘⇧O**) and Markappoly treats it like a vault. If your notes came from Obsidian, they'll work as they are.
+
+- \`[[Wiki links]]\` connect notes by name, and the editor autocompletes them after \`[[\`
+- The sidebar shows **backlinks**: every note that points at the one you're reading
+- \`![[Note]]\` embeds another note right here, \`![[Note#Section]]\` just that section
+- Hover an internal link to peek at the target without leaving this page
+- #tags are clickable, ==highlights== look like this, and \`%%comments%%\` never reach the preview
+- **⌘P** opens the quick switcher, **⌘⇧G** draws a graph of the current note's links, **⌘D** bookmarks a file
+
+> [!TIP]- Foldable callouts
+> Put a \`-\` after the marker (\`> [!tip]-\`) and the callout collapses to its title, like this one did.
+
 ---
 
 ### Do more
@@ -71,6 +86,7 @@ flowchart LR
 - Open several files as **tabs**, then **Compare** two of them side by side
 - Browse a whole folder from the sidebar (**⌘⇧O**) and search across all of it
 - Paste or drag an image into the editor to attach it
+- Edit frontmatter as **properties** straight from the preview
 - Export to Word and PDF, or to more formats when Pandoc is installed
 
 New here? The full guide lives in the [user manual](https://github.com/appoly/markappoly/wiki).

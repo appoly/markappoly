@@ -82,6 +82,49 @@ function unquote(s: string): string {
   return s;
 }
 
+function quoteIfNeeded(value: string): string {
+  if (value === "") return '""';
+  if (
+    /[:#[\]{}&*!|>'"%@`,]/.test(value) ||
+    value !== value.trim() ||
+    /^(true|false|null|~)$/i.test(value)
+  ) {
+    return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+  return value;
+}
+
+/** Serialize the simple key → value map back to YAML (inverse of parseSimpleYaml). */
+export function serializeYaml(data: Record<string, string | string[]>): string {
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(data)) {
+    if (Array.isArray(value)) {
+      lines.push(`${key}: [${value.map((v) => quoteIfNeeded(v)).join(", ")}]`);
+    } else {
+      lines.push(`${key}: ${quoteIfNeeded(value)}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Replace (or insert) the document's frontmatter block with the given data.
+ * An empty map removes the block entirely.
+ */
+export function replaceFrontmatter(
+  source: string,
+  data: Record<string, string | string[]>,
+): string {
+  const keys = Object.keys(data);
+  const block = keys.length === 0 ? "" : `---\n${serializeYaml(data)}\n---\n`;
+  if (FM_RE.test(source)) {
+    // Replacement via a function so `$` sequences in values are kept literal.
+    return source.replace(FM_RE, () => block);
+  }
+  if (!block) return source;
+  return `${block}\n${source}`;
+}
+
 /** Pull a display title from common frontmatter keys. */
 export function frontmatterTitle(data: Record<string, string | string[]>): string | null {
   for (const key of ["title", "Title", "name", "Name"]) {

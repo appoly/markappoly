@@ -18,6 +18,7 @@ const READING_FONT_KEY = "mv.readingFont";
 const LINE_SPACING_KEY = "mv.lineSpacing";
 const CUSTOM_CSS_KEY = "mv.customCss";
 const BLOCK_REMOTE_IMG_KEY = "mv.blockRemoteImages";
+const BOOKMARKS_KEY = "mv.bookmarks";
 
 const WIDTHS: Record<ReadingWidth, string> = {
   narrow: "600px",
@@ -64,6 +65,7 @@ export function usePreferences() {
   const [blockRemoteImages, setBlockRemoteImages] = useState<boolean>(() =>
     load(BLOCK_REMOTE_IMG_KEY, false),
   );
+  const [bookmarks, setBookmarks] = useState<string[]>(() => load(BOOKMARKS_KEY, []));
   const [systemDark, setSystemDark] = useState(
     () => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false,
   );
@@ -130,12 +132,21 @@ export function usePreferences() {
   useEffect(() => {
     localStorage.setItem(BLOCK_REMOTE_IMG_KEY, JSON.stringify(blockRemoteImages));
   }, [blockRemoteImages]);
+  useEffect(() => {
+    localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bookmarks));
+  }, [bookmarks]);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const fn = (e: MediaQueryListEvent) => setSystemDark(e.matches);
     mq.addEventListener("change", fn);
     return () => mq.removeEventListener("change", fn);
+  }, []);
+
+  const toggleBookmark = useCallback((path: string) => {
+    setBookmarks((list) =>
+      list.includes(path) ? list.filter((p) => p !== path) : [...list, path],
+    );
   }, []);
 
   const setZoom = useCallback((z: number) => setZoomRaw(clampZoom(z)), []);
@@ -176,5 +187,7 @@ export function usePreferences() {
     setCustomCss,
     blockRemoteImages,
     setBlockRemoteImages,
+    bookmarks,
+    toggleBookmark,
   };
 }

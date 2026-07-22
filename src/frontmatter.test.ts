@@ -4,6 +4,8 @@ import {
   frontmatterTitle,
   parseFrontmatter,
   parseSimpleYaml,
+  replaceFrontmatter,
+  serializeYaml,
 } from "./frontmatter";
 
 describe("parseFrontmatter", () => {
@@ -41,5 +43,39 @@ Body text.
     const data = parseSimpleYaml(`title: "Hello: world"\nname: 'plain'`);
     expect(data.title).toBe("Hello: world");
     expect(data.name).toBe("plain");
+  });
+});
+
+describe("serializeYaml", () => {
+  it("round-trips through parseSimpleYaml", () => {
+    const data = {
+      title: "Hello: world",
+      tags: ["alpha", "beta"],
+      draft: "true",
+    };
+    expect(parseSimpleYaml(serializeYaml(data))).toEqual(data);
+  });
+});
+
+describe("replaceFrontmatter", () => {
+  it("replaces an existing block", () => {
+    const src = "---\ntitle: Old\n---\n# Body\n";
+    const next = replaceFrontmatter(src, { title: "New" });
+    expect(next).toBe("---\ntitle: New\n---\n# Body\n");
+  });
+
+  it("inserts a block when none exists", () => {
+    const next = replaceFrontmatter("# Body\n", { title: "Added" });
+    expect(next).toBe("---\ntitle: Added\n---\n\n# Body\n");
+    expect(parseFrontmatter(next)!.data.title).toBe("Added");
+  });
+
+  it("removes the block when the map is empty", () => {
+    expect(replaceFrontmatter("---\ntitle: Old\n---\n# Body\n", {})).toBe("# Body\n");
+  });
+
+  it("keeps dollar signs in values literal", () => {
+    const next = replaceFrontmatter("---\ntitle: Old\n---\nBody\n", { title: "$100 & more" });
+    expect(parseFrontmatter(next)!.data.title).toBe("$100 & more");
   });
 });

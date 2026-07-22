@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Heading } from "./markdown";
 import { buildFolderTree, type TreeNode } from "./folderTree";
+import { basename } from "./paths";
+import type { Backlink } from "./vault";
 
 export type FileEntry = { name: string; path: string };
 type SearchHit = { path: string; name: string; line: number; text: string };
@@ -103,6 +105,11 @@ export function Sidebar({
   headings,
   onGotoHeading,
   activeHeadingSlug,
+  query,
+  onQueryChange,
+  bookmarks,
+  onToggleBookmark,
+  backlinks,
 }: {
   files: FileEntry[];
   folderName: string | null;
@@ -114,8 +121,12 @@ export function Sidebar({
   headings: Heading[];
   onGotoHeading: (h: Heading) => void;
   activeHeadingSlug?: string | null;
+  query: string;
+  onQueryChange: (q: string) => void;
+  bookmarks: string[];
+  onToggleBookmark: (path: string) => void;
+  backlinks: Backlink[];
 }) {
-  const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
   const tree = useMemo(() => buildFolderTree(files), [files]);
@@ -147,6 +158,35 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
+      {bookmarks.length > 0 && (
+        <div className="sidebar-section">
+          <div className="sidebar-title">
+            <span>Bookmarks</span>
+          </div>
+          <ul className="file-list">
+            {bookmarks.map((p) => (
+              <li key={p} className="bookmark-row">
+                <button
+                  className={"file-item" + (p === activePath ? " active" : "")}
+                  onClick={() => onOpenFile(p)}
+                  title={p}
+                >
+                  {basename(p)}
+                </button>
+                <button
+                  className="bookmark-remove"
+                  title="Remove bookmark"
+                  aria-label={`Remove bookmark for ${basename(p)}`}
+                  onClick={() => onToggleBookmark(p)}
+                >
+                  ★
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="sidebar-section">
         <div className="sidebar-title">
           <span>{folderName ?? "Files"}</span>
@@ -160,7 +200,7 @@ export function Sidebar({
             className="sidebar-search"
             placeholder="Search this folder…"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => onQueryChange(e.target.value)}
           />
         )}
 
@@ -217,6 +257,43 @@ export function Sidebar({
           </ul>
         )}
       </div>
+
+      {folderPath && activePath && (
+        <div className="sidebar-section">
+          <div className="sidebar-title">
+            <span>
+              Backlinks
+              {backlinks.length > 0 && <span className="sidebar-count">{backlinks.length}</span>}
+            </span>
+          </div>
+          {backlinks.length === 0 ? (
+            <div className="sidebar-empty">Nothing links here yet</div>
+          ) : (
+            <ul className="file-list">
+              {backlinks.map((b) => (
+                <li key={b.path} className="backlink-group">
+                  {b.contexts.map((c, i) => (
+                    <button
+                      key={`${b.path}:${c.line}:${i}`}
+                      className="search-hit"
+                      onClick={() => onOpenAtLine(b.path, c.line)}
+                      title={`${b.name}:${c.line}`}
+                    >
+                      {i === 0 && (
+                        <span className="search-hit-file">
+                          {b.name}
+                          <span className="search-hit-line">:{c.line}</span>
+                        </span>
+                      )}
+                      <span className="search-hit-text">{c.text}</span>
+                    </button>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </aside>
   );
 }

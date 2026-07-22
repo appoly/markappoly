@@ -88,6 +88,24 @@ export const MoreIcon = () => (
   </Icon>
 );
 
+export const StarIcon = ({ filled }: { filled?: boolean }) => (
+  <Icon filled={filled}>
+    <path d="M12 3.6l2.5 5.2 5.7.7-4.2 4 1.1 5.6-5.1-2.8-5.1 2.8 1.1-5.6-4.2-4 5.7-.7Z" />
+  </Icon>
+);
+
+export const GraphIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="2.4" />
+    <circle cx="5" cy="6" r="1.8" />
+    <circle cx="19" cy="7" r="1.8" />
+    <circle cx="17" cy="18.5" r="1.8" />
+    <line x1="10.2" y1="10.7" x2="6.4" y2="7.2" />
+    <line x1="14.1" y1="10.8" x2="17.7" y2="8.1" />
+    <line x1="13.5" y1="13.9" x2="15.9" y2="17.2" />
+  </Icon>
+);
+
 export const ChevronIcon = () => (
   <svg
     className="chevron"

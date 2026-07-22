@@ -13,6 +13,11 @@ import type { Extension } from "@codemirror/state";
 import { extractHeadings, type Heading, Preview } from "./markdown";
 import { FindBar } from "./FindBar";
 import { Sidebar, type FileEntry } from "./Sidebar";
+import { QuickSwitcher, type Command } from "./QuickSwitcher";
+import { GraphView } from "./GraphView";
+import { useVault } from "./vault";
+import { wikiCompletion } from "./wikiComplete";
+import { parseFrontmatter } from "./frontmatter";
 import { TabBar } from "./TabBar";
 import { DiffView } from "./DiffView";
 import { PresentView } from "./PresentView";
@@ -32,6 +37,8 @@ import {
   ExportIcon,
   MoreIcon,
   ChevronIcon,
+  StarIcon,
+  GraphIcon,
 } from "./icons";
 import {
   markdownToHtml,
@@ -77,6 +84,9 @@ function App() {
   const [findOpen, setFindOpen] = useState(false);
   const [presenting, setPresenting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [pandocOk, setPandocOk] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
 
@@ -96,6 +106,30 @@ function App() {
   const dirty = active.dirty;
   const filePath = active.path;
   const baseDir = useMemo(() => dirOf(filePath), [filePath]);
+
+  // ----- Vault index (wiki links, backlinks, tags, graph) -----
+  const { resolver, refresh: refreshVault } = useVault(folderPath);
+  const resolveWiki = useCallback(
+    (target: string) => resolver.resolveWiki(target, baseDir),
+    [resolver, baseDir],
+  );
+  const backlinks = useMemo(
+    () => resolver.backlinksFor(filePath),
+    [resolver, filePath],
+  );
+  const tagList = useMemo(
+    () => [...resolver.tagCounts().entries()].sort((a, b) => b[1] - a[1]),
+    [resolver],
+  );
+  const bookmarked = !!filePath && prefs.bookmarks.includes(filePath);
+
+  const onTagClick = useCallback(
+    (tag: string) => {
+      prefs.setSidebarOpen(true);
+      setSearchQuery(`#${tag}`);
+    },
+    [prefs.setSidebarOpen],
+  );
 
   const headings = useMemo(() => extractHeadings(source), [source]);
   const wordCount = useMemo(() => (source.trim().match(/\S+/g) || []).length, [source]);
@@ -261,7 +295,8 @@ function App() {
     }
     patchDocById(doc.id, { path, dirty: false, mtime });
     invoke("push_recent", { path }).catch(() => {});
-  }, [getActive, patchDocById]);
+    refreshVault();
+  }, [getActive, patchDocById, refreshVault]);
 
   const exportAs = useCallback(
     async (kind: ExportKind) => {
@@ -423,8 +458,18 @@ function App() {
       }),
     [attachImage],
   );
+  // Stable getters so the completion source always sees the current vault.
+  const filesRef = useRef<FileEntry[]>(files);
+  filesRef.current = files;
+  const tagsRef = useRef<string[]>([]);
+  tagsRef.current = tagList.map(([t]) => t);
+  const wikiExt = useMemo(
+    () => wikiCompletion(() => filesRef.current, () => tagsRef.current),
+    [],
+  );
+
   const editorExtras = useMemo(() => {
-    const ext: Extension[] = [editorImageExt];
+    const ext: Extension[] = [editorImageExt, wikiExt];
     if (prefs.pasteAsMarkdown) ext.push(pasteMarkdown);
     if (prefs.spellcheck) ext.push(spellcheck);
     if (prefs.focusMode) ext.push(focusMode);
@@ -432,6 +477,7 @@ function App() {
     return ext;
   }, [
     editorImageExt,
+    wikiExt,
     prefs.pasteAsMarkdown,
     prefs.spellcheck,
     prefs.focusMode,
@@ -450,6 +496,16 @@ function App() {
     const b = (cur.find((d) => d.id !== a) ?? cur[0]).id;
     setCompare({ aId: a, bId: b });
   }, []);
+
+  const addProperties = useCallback(() => {
+    const doc = getActive();
+    if (parseFrontmatter(doc.source)) return;
+    const title = basename(doc.path).replace(/\.[^.]+$/, "") || "Untitled";
+    patchDocById(doc.id, {
+      source: `---\ntitle: ${title}\n---\n\n${doc.source}`,
+      dirty: true,
+    });
+  }, [getActive, patchDocById]);
 
   const wrapSelection = useCallback((before: string, after = before, placeholder = "") => {
     const view = cmRef.current?.view;
@@ -698,6 +754,35 @@ function App() {
             if (v) openSearchPanel(v);
           }
           break;
+        case "quick_switcher":
+          setSwitcherOpen((o) => !o);
+          break;
+        case "local_graph":
+          setGraphOpen((o) => !o);
+          break;
+        case "bookmark": {
+          const p = getActive().path;
+          if (p) prefs.toggleBookmark(p);
+          break;
+        }
+        case "new_tab":
+          newDoc();
+          break;
+        case "compare":
+          startCompare();
+          break;
+        case "add_properties":
+          addProperties();
+          break;
+        case "theme_system":
+          prefs.setTheme("system");
+          break;
+        case "theme_light":
+          prefs.setTheme("light");
+          break;
+        case "theme_dark":
+          prefs.setTheme("dark");
+          break;
         default:
           if (id.startsWith("export:")) exportAs(id.slice(7) as ExportKind);
           else if (id.startsWith("recent::")) {
@@ -719,7 +804,13 @@ function App() {
       prefs.zoomIn,
       prefs.zoomOut,
       prefs.zoomReset,
+      prefs.toggleBookmark,
+      prefs.setTheme,
       exportAs,
+      getActive,
+      newDoc,
+      startCompare,
+      addProperties,
     ],
   );
 
@@ -839,6 +930,31 @@ function App() {
     insertLink,
   ]);
 
+  const commands: Command[] = [
+    { id: "new_tab", label: "New tab", hint: "⌘T" },
+    { id: "open", label: "Open file…", hint: "⌘O" },
+    { id: "open_folder", label: "Open folder…", hint: "⌘⇧O" },
+    { id: "save", label: "Save", hint: "⌘S" },
+    { id: "reload", label: "Reload from disk", hint: "⌘R" },
+    { id: "toggle_mode", label: "Toggle edit / preview", hint: "⌘E" },
+    { id: "toggle_split", label: "Toggle split view", hint: "⌘⇧E" },
+    { id: "present", label: "Start presentation", hint: "⌘⇧P" },
+    { id: "local_graph", label: "Local graph", hint: "⌘⇧G" },
+    { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark this file", hint: "⌘D" },
+    { id: "add_properties", label: "Add properties" },
+    { id: "compare", label: "Compare two files" },
+    { id: "copy_html", label: "Copy as HTML" },
+    { id: "export:pdf", label: "Export as PDF" },
+    { id: "export:html", label: "Export as HTML" },
+    { id: "export:docx", label: "Export as Word" },
+    { id: "find", label: "Find in document", hint: "⌘F" },
+    { id: "toggle_sidebar", label: "Toggle sidebar", hint: "⌘\\" },
+    { id: "settings", label: "Settings…", hint: "⌘," },
+    { id: "theme_system", label: "Theme: System" },
+    { id: "theme_light", label: "Theme: Light" },
+    { id: "theme_dark", label: "Theme: Dark" },
+  ];
+
   const tabs = docs.map((d) => ({ id: d.id, name: docName(d), dirty: d.dirty }));
   const docA = compare ? docs.find((d) => d.id === compare.aId) : undefined;
   const docB = compare ? docs.find((d) => d.id === compare.bId) : undefined;
@@ -951,6 +1067,22 @@ function App() {
         <div className="spacer" data-tauri-drag-region />
 
         <div className="toolbar-group">
+          <button
+            className={"icon-btn" + (bookmarked ? " star-active" : "")}
+            onClick={() => filePath && prefs.toggleBookmark(filePath)}
+            title={bookmarked ? "Remove bookmark (⌘D)" : "Bookmark (⌘D)"}
+            disabled={!filePath}
+          >
+            <StarIcon filled={bookmarked} />
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => setGraphOpen(true)}
+            title="Local graph (⌘⇧G)"
+            disabled={!filePath || !folderPath}
+          >
+            <GraphIcon />
+          </button>
           <button className="icon-btn" onClick={() => setPresenting(true)} title="Present (⌘⇧P)">
             <PresentIcon />
           </button>
@@ -1003,6 +1135,11 @@ function App() {
             headings={headings}
             onGotoHeading={gotoHeading}
             activeHeadingSlug={activeHeadingSlug}
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            bookmarks={prefs.bookmarks}
+            onToggleBookmark={prefs.toggleBookmark}
+            backlinks={backlinks}
           />
         )}
 
@@ -1144,7 +1281,13 @@ function App() {
               <DiffView a={docA?.source ?? ""} b={docB?.source ?? ""} dark={prefs.dark} />
             ) : mode === "preview" ? (
               <div className="markdown-body">
-                <FrontmatterBar source={source} />
+                <FrontmatterBar
+                  source={source}
+                  onChangeSource={(next) =>
+                    patchDocById(active.id, { source: next, dirty: true })
+                  }
+                  onTagClick={onTagClick}
+                />
                 <Preview
                   source={source}
                   dark={prefs.dark}
@@ -1152,6 +1295,8 @@ function App() {
                   onToggleTask={toggleTask}
                   onOpenLocal={openPath}
                   blockRemoteImages={prefs.blockRemoteImages}
+                  resolveWiki={resolveWiki}
+                  onTagClick={onTagClick}
                 />
               </div>
             ) : mode === "split" ? (
@@ -1166,6 +1311,8 @@ function App() {
                 onToggleTask={toggleTask}
                 onOpenLocal={openPath}
                 blockRemoteImages={prefs.blockRemoteImages}
+                resolveWiki={resolveWiki}
+                onTagClick={onTagClick}
               />
             ) : (
               <EditorPane
@@ -1210,6 +1357,28 @@ function App() {
       )}
 
       {settingsOpen && <Settings prefs={prefs} onClose={() => setSettingsOpen(false)} />}
+
+      {switcherOpen && (
+        <QuickSwitcher
+          files={files}
+          bookmarks={prefs.bookmarks}
+          commands={commands}
+          tags={tagList}
+          onOpenFile={openPath}
+          onRunCommand={handleMenu}
+          onOpenTag={onTagClick}
+          onClose={() => setSwitcherOpen(false)}
+        />
+      )}
+
+      {graphOpen && filePath && (
+        <GraphView
+          centerPath={filePath}
+          resolver={resolver}
+          onOpen={openPath}
+          onClose={() => setGraphOpen(false)}
+        />
+      )}
     </div>
   );
 }

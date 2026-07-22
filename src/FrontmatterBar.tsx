@@ -1,13 +1,38 @@
+import { useState } from "react";
 import {
   frontmatterTags,
   frontmatterTitle,
   parseFrontmatter,
+  replaceFrontmatter,
 } from "./frontmatter";
+import { PropertiesPanel } from "./PropertiesPanel";
 
-/** Compact chrome above the preview when a document has YAML frontmatter. */
-export function FrontmatterBar({ source }: { source: string }) {
+/**
+ * Compact chrome above the preview when a document has YAML frontmatter.
+ * "Edit" opens the properties panel, which writes changes back to the source.
+ */
+export function FrontmatterBar({
+  source,
+  onChangeSource,
+  onTagClick,
+}: {
+  source: string;
+  onChangeSource?: (next: string) => void;
+  onTagClick?: (tag: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
   const fm = parseFrontmatter(source);
   if (!fm) return null;
+
+  if (editing && onChangeSource) {
+    return (
+      <PropertiesPanel
+        data={fm.data}
+        onChange={(next) => onChangeSource(replaceFrontmatter(source, next))}
+        onClose={() => setEditing(false)}
+      />
+    );
+  }
 
   const title = frontmatterTitle(fm.data);
   const tags = frontmatterTags(fm.data);
@@ -33,15 +58,26 @@ export function FrontmatterBar({ source }: { source: string }) {
 
   return (
     <aside className="frontmatter-bar" aria-label="Document metadata">
+      {onChangeSource && (
+        <button className="fm-edit link-btn" onClick={() => setEditing(true)}>
+          Edit
+        </button>
+      )}
       {title && <div className="fm-title">{title}</div>}
       {description && <div className="fm-desc">{description}</div>}
       <div className="fm-meta">
         {date && <span className="fm-date">{date}</span>}
-        {tags.map((t) => (
-          <span key={t} className="fm-tag">
-            {t}
-          </span>
-        ))}
+        {tags.map((t) =>
+          onTagClick ? (
+            <button key={t} className="fm-tag fm-tag-click" onClick={() => onTagClick(t)}>
+              {t}
+            </button>
+          ) : (
+            <span key={t} className="fm-tag">
+              {t}
+            </span>
+          ),
+        )}
         {extras.slice(0, 6).map(([k, v]) => (
           <span key={k} className="fm-kv">
             <span className="fm-k">{k}</span>

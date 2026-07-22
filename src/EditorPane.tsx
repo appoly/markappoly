@@ -32,7 +32,7 @@ export function EditorPane({
       value={value}
       height="100%"
       theme="none"
-      basicSetup={{ foldGutter: false, syntaxHighlighting: false }}
+      basicSetup={{ foldGutter: false, syntaxHighlighting: false, autocompletion: false }}
       extensions={[markdown(), search(), ...EDITOR_BASE, ...extra]}
       onChange={onChange}
       onCreateEditor={(view) => {
@@ -58,6 +58,8 @@ export function SplitView({
   onToggleTask,
   onOpenLocal,
   blockRemoteImages,
+  resolveWiki,
+  onTagClick,
 }: {
   docId: string;
   value: string;
@@ -69,6 +71,8 @@ export function SplitView({
   onToggleTask: (i: number) => void;
   onOpenLocal?: (path: string) => void;
   blockRemoteImages?: boolean;
+  resolveWiki?: (target: string) => string | null;
+  onTagClick?: (tag: string) => void;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
@@ -112,6 +116,8 @@ export function SplitView({
             onToggleTask={onToggleTask}
             onOpenLocal={onOpenLocal}
             blockRemoteImages={blockRemoteImages}
+            resolveWiki={resolveWiki}
+            onTagClick={onTagClick}
           />
         </div>
       </div>
