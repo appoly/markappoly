@@ -70,8 +70,10 @@ jobs:
         run: npm ci
 
       # Fail on high/critical advisories in shipped (non-dev) dependencies.
+      # Advisories with no upstream fix are allowlisted in audit-ci.jsonc,
+      # each with a rationale and a note to remove once patched.
       - name: npm audit
-        run: npm audit --omit=dev --audit-level=high
+        run: npx audit-ci@^7 --config audit-ci.jsonc --show-found
 
       # Prebuilt binary — avoids a long cargo install compile.
       - name: Install cargo-audit

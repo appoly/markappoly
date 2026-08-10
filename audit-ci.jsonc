@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/IBM/audit-ci/main/docs/schema.json",
+  // Fail on high/critical advisories in shipped (non-dev) dependencies.
+  "high": true,
+  "skip-dev": true,
+  "allowlist": [
+    // image-size DoS via crafted ICNS/JXL/HEIF images (infinite loop). Pulled in
+    // by remark-docx for docx export. Every published version (<= 2.0.2) is
+    // affected and no patched release exists yet. Worst case here is a hung
+    // export of a malicious document, not code execution. Remove these once
+    // image-size ships a fix.
+    "GHSA-w3rx-r6r6-pgpr",
+    "GHSA-5p2g-fcmc-qvqq"
+  ]
+}
