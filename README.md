@@ -40,7 +40,7 @@ After the first launch the app keeps itself up to date: when a new version ships
 **Reading**
 - Formatted preview by default, with GitHub-flavored Markdown: tables, task lists, strikethrough
 - Syntax-highlighted code, **KaTeX math**, **Mermaid diagrams**, and GitHub-style alerts (`> [!NOTE]`)
-- Outline sidebar (with scroll spy) and folder tree browser, find-in-document (⌘F), and search across a whole folder
+- Outline sidebar (with scroll spy) and folder tree browser, find-in-document (⌘F), and search — or search **and replace** — across a whole folder
 - Open Recent, word count and reading time, live reload when the file changes on disk
 - Session restore: tabs, folder, and view mode come back when you relaunch
 - Adjustable reading width, font, and line spacing, plus your own custom CSS, and an option to block remote images
@@ -59,7 +59,9 @@ Point Markappoly at a folder of notes (an Obsidian vault works as-is) and it beh
 - `#tags` render as clickable chips, in the text and in frontmatter. Click one to search the folder for it
 - Hover any internal link and a small rendered preview of the target pops up
 - **Quick switcher** (⌘P): fuzzy-find any file, or type `>` for commands and `#` for tags
-- **Local graph** (⌘⇧G): the current note in the middle, everything it links to and from around it
+- **Graph** (⌘⇧G): the current note's neighbourhood, or flip to **Vault** for a force-directed map of every note
+- **Templates**: keep skeleton notes in a `Templates` folder and create new notes from them (⌘N) with `{{title}}`, `{{date}}` and `{{time}}` filled in
+- **Daily notes** (⌘⇧D): jump to today's note, created on first use — name a template `Daily` to seed it
 - **Bookmarks** (⌘D) pin your most-used files to the top of the sidebar
 - Frontmatter is editable as **properties**: typed fields that write themselves back as YAML
 - More preview syntax: `==highlights==`, `%%comments%%` that stay hidden, foldable callouts (`> [!note]-`), and Obsidian's extra callout types (info, question, danger, and friends)
@@ -70,6 +72,7 @@ Point Markappoly at a folder of notes (an Obsidian vault works as-is) and it beh
 - Table tools to insert, extend, and align Markdown tables
 - Paste or drag an image to attach it next to the document; paste rich text and it converts to Markdown
 - Tick a checkbox in the preview and it writes the change back to the source
+- Optional **autosave**, and **File History**: a snapshot of every file is kept before each save (and before folder-wide replaces), diffable and restorable from the File menu
 
 Everything's tunable from **Settings** (⌘,).
 
@@ -85,10 +88,11 @@ For a walkthrough of every feature, see the **[user manual](https://github.com/a
 | ------ | -------- | ------ | -------- |
 | Open | ⌘O | Find | ⌘F |
 | Open folder | ⌘⇧O | Quick switcher | ⌘P |
+| New note | ⌘N | Daily note | ⌘⇧D |
 | Save | ⌘S | Toggle edit/preview | ⌘E |
 | Reload from disk | ⌘R | Split view | ⌘⇧E |
 | Bookmark | ⌘D | Present | ⌘⇧P |
-| Toggle sidebar | ⌘\ | Local graph | ⌘⇧G |
+| Toggle sidebar | ⌘\ | Graph | ⌘⇧G |
 | Bold / Italic / Link | ⌘B / ⌘I / ⌘K | Zoom | ⌘+ / ⌘- / ⌘0 |
 | Settings | ⌘, | New tab / Close | ⌘T / ⌘W |
 

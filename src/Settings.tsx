@@ -98,6 +98,31 @@ export function Settings({ prefs, onClose }: { prefs: Prefs; onClose: () => void
             <Row label="Block remote images" hint="Don't load images over the network">
               <Toggle checked={prefs.blockRemoteImages} onChange={prefs.setBlockRemoteImages} />
             </Row>
+            <Row label="Autosave" hint="Save changes a moment after you stop typing">
+              <Toggle checked={prefs.autosave} onChange={prefs.setAutosave} />
+            </Row>
+          </section>
+
+          <section className="set-section">
+            <h3>Vault</h3>
+            <Row label="Templates folder" hint="Notes here appear in New Note…">
+              <input
+                className="set-text"
+                value={prefs.templatesFolder}
+                spellCheck={false}
+                placeholder="Templates"
+                onChange={(e) => prefs.setTemplatesFolder(e.target.value)}
+              />
+            </Row>
+            <Row label="Daily notes folder" hint="Blank keeps daily notes in the folder root">
+              <input
+                className="set-text"
+                value={prefs.dailyFolder}
+                spellCheck={false}
+                placeholder="(root)"
+                onChange={(e) => prefs.setDailyFolder(e.target.value)}
+              />
+            </Row>
           </section>
 
           <section className="set-section">

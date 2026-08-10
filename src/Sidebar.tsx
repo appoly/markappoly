@@ -110,6 +110,8 @@ export function Sidebar({
   bookmarks,
   onToggleBookmark,
   backlinks,
+  onReplaceAll,
+  searchNonce = 0,
 }: {
   files: FileEntry[];
   folderName: string | null;
@@ -126,9 +128,15 @@ export function Sidebar({
   bookmarks: string[];
   onToggleBookmark: (path: string) => void;
   backlinks: Backlink[];
+  /** Replace every occurrence of the current query across the folder. */
+  onReplaceAll?: (query: string, replacement: string) => void;
+  /** Bumped after a folder-wide replace so the hit list refreshes. */
+  searchNonce?: number;
 }) {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [replacement, setReplacement] = useState("");
   const tree = useMemo(() => buildFolderTree(files), [files]);
 
   useEffect(() => {
@@ -152,7 +160,7 @@ export function Sidebar({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [folderPath, query]);
+  }, [folderPath, query, searchNonce]);
 
   const searchActive = !!folderPath && query.trim() !== "";
 
@@ -202,6 +210,42 @@ export function Sidebar({
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
           />
+        )}
+
+        {searchActive && onReplaceAll && (
+          <div className="replace-row">
+            {replaceOpen ? (
+              <>
+                <input
+                  className="sidebar-search"
+                  placeholder="Replace with…"
+                  value={replacement}
+                  onChange={(e) => setReplacement(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      onReplaceAll(query, replacement);
+                    }
+                  }}
+                />
+                <button
+                  className="fmt"
+                  disabled={hits.length === 0}
+                  title="Case-sensitive; a snapshot of each changed file is kept in File History"
+                  onClick={() => onReplaceAll(query, replacement)}
+                >
+                  Replace all
+                </button>
+                <button className="fmt" title="Hide replace" onClick={() => setReplaceOpen(false)}>
+                  ✕
+                </button>
+              </>
+            ) : (
+              <button className="link-btn" onClick={() => setReplaceOpen(true)}>
+                Replace…
+              </button>
+            )}
+          </div>
         )}
 
         {searchActive ? (

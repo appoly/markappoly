@@ -1855,3 +1855,163 @@ details.markdown-alert[open] > summary.markdown-alert-title::before {
     break-inside: avoid;
   }
 }
+
+/* ---------- Lazy-loaded view fallback ---------- */
+
+.lazy-fallback {
+  flex: 1;
+}
+
+/* ---------- Sidebar folder replace ---------- */
+
+.replace-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 14px 8px;
+}
+.replace-row .sidebar-search {
+  flex: 1;
+  width: auto;
+  margin: 0;
+}
+.replace-row .fmt,
+.history-foot .fmt {
+  font: inherit;
+  font-size: 12px;
+  height: 26px;
+  padding: 0 9px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.replace-row .fmt:hover:not(:disabled),
+.history-foot .fmt:hover:not(:disabled) {
+  background: var(--panel-strong);
+}
+.replace-row .fmt:disabled,
+.history-foot .fmt:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.history-foot .fmt-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.history-foot .fmt-primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.1);
+}
+
+/* ---------- File history ---------- */
+
+.history-card {
+  width: min(860px, calc(100vw - 64px));
+  height: min(600px, calc(100vh - 80px));
+}
+.history-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.history-list {
+  width: 190px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--hairline);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.history-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.history-item:hover {
+  background: var(--panel);
+}
+.history-item.active {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.history-item.active .history-size {
+  color: var(--accent-text);
+  opacity: 0.8;
+}
+.history-size {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.history-diff {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.history-diff .diff-view {
+  flex: 1;
+}
+.history-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--hairline);
+}
+.history-foot .spacer {
+  flex: 1;
+}
+
+/* ---------- New note modal ---------- */
+
+.new-note-card {
+  width: min(440px, calc(100vw - 48px));
+}
+.set-text {
+  font: inherit;
+  font-size: 13px;
+  width: 200px;
+  padding: 5px 9px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  outline: none;
+}
+.set-text:focus {
+  border-color: var(--accent);
+}
+.set-error {
+  color: #ff453a;
+  font-size: 12.5px;
+  margin: 6px 0 0;
+}
+
+/* ---------- Graph modal ---------- */
+
+.graph-mode {
+  margin-left: auto;
+  margin-right: 12px;
+}
+.graph-note {
+  margin: 6px 2px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -7,25 +7,22 @@ import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { openSearchPanel } from "@codemirror/search";
-import { EditorView } from "@codemirror/view";
-import type { Extension } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 import { extractHeadings, type Heading, Preview } from "./markdown";
 import { FindBar } from "./FindBar";
 import { Sidebar, type FileEntry } from "./Sidebar";
 import { QuickSwitcher, type Command } from "./QuickSwitcher";
-import { GraphView } from "./GraphView";
 import { useVault } from "./vault";
-import { wikiCompletion } from "./wikiComplete";
 import { parseFrontmatter } from "./frontmatter";
 import { TabBar } from "./TabBar";
-import { DiffView } from "./DiffView";
 import { PresentView } from "./PresentView";
 import { usePreferences } from "./prefs";
 import { Settings } from "./Settings";
-import { focusMode, typewriter, spellcheck, pasteMarkdown } from "./editorFeatures";
 import { insertTable, addRow, addColumn, formatTable } from "./tableTools";
 import { Menu, type MenuEntry } from "./Menu";
+import { NewNoteModal } from "./NewNoteModal";
+import { fillTemplate, formatDate, isInFolder, noteFileName } from "./template";
+import type { AttachPayload } from "./EditorPane";
 import {
   SidebarIcon,
   OpenIcon,
@@ -40,13 +37,6 @@ import {
   StarIcon,
   GraphIcon,
 } from "./icons";
-import {
-  markdownToHtml,
-  markdownToAst,
-  htmlDocument,
-  markdownToDocxBase64,
-} from "./export";
-import { EditorPane, SplitView } from "./EditorPane";
 import { FrontmatterBar } from "./FrontmatterBar";
 import { useLiveReload } from "./useLiveReload";
 import { useScrollSpy } from "./useScrollSpy";
@@ -55,6 +45,14 @@ import { basename, dirOf, MD_EXTENSIONS } from "./paths";
 import { makeDoc, type Doc, type ExportKind, type Mode } from "./types";
 import { WELCOME } from "./welcome";
 import "./App.css";
+
+// The editor (CodeMirror), diff, graph, and history views load on demand so a
+// plain "open a file and read it" launch parses none of them.
+const EditorPane = lazy(() => import("./EditorPane").then((m) => ({ default: m.EditorPane })));
+const SplitView = lazy(() => import("./EditorPane").then((m) => ({ default: m.SplitView })));
+const DiffView = lazy(() => import("./DiffView").then((m) => ({ default: m.DiffView })));
+const GraphView = lazy(() => import("./GraphView").then((m) => ({ default: m.GraphView })));
+const HistoryView = lazy(() => import("./HistoryView").then((m) => ({ default: m.HistoryView })));
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const PANDOC_FORMATS = [
@@ -86,7 +84,10 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [newNoteOpen, setNewNoteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchNonce, setSearchNonce] = useState(0);
   const [pandocOk, setPandocOk] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
 
@@ -278,25 +279,88 @@ function App() {
     patchDocById(doc.id, { source: text, dirty: false, mtime });
   }, [getActive, patchDocById]);
 
+  // The single write path for documents that already live on disk. Manual
+  // saves force a history snapshot and surface errors; autosaves stay quiet,
+  // never clobber external edits, and retry on the next pause.
+  const saveDocById = useCallback(
+    async (id: string, opts?: { manual?: boolean }) => {
+      const doc = docsRef.current.find((d) => d.id === id);
+      if (!doc?.path || !doc.dirty) return;
+      const { path, source, mtime: knownMtime } = doc;
+      if (!opts?.manual) {
+        // The file changed on disk while this tab was dirty (live reload can't
+        // touch dirty tabs). Autosave must not overwrite that silently.
+        const diskMtime = await invoke<number>("file_mtime", { path }).catch(() => null);
+        if (diskMtime !== null && knownMtime !== null && diskMtime > knownMtime) return;
+      }
+      await invoke("snapshot_file", { path, force: !!opts?.manual }).catch(() => {});
+      try {
+        await invoke("write_file", { path, contents: source });
+      } catch (e) {
+        if (opts?.manual) throw e;
+        return; // volume gone / permissions — keep the doc dirty for a manual save
+      }
+      let mtime: number | null = null;
+      try {
+        mtime = await invoke<number>("file_mtime", { path });
+      } catch {
+        /* ignore */
+      }
+      // Keystrokes typed while the write was in flight must stay dirty.
+      const cur = docsRef.current.find((d) => d.id === id);
+      if (cur && cur.source === source) patchDocById(id, { dirty: false, mtime });
+      else patchDocById(id, { mtime });
+      // Autosave skips the vault re-index; the file watcher already refreshes it.
+      if (opts?.manual) refreshVault();
+    },
+    [patchDocById, refreshVault],
+  );
+
   const saveFile = useCallback(async () => {
     const doc = getActive();
-    let path = doc.path;
-    if (!path) {
+    if (!doc.path) {
       const chosen = await save({ filters: [{ name: "Markdown", extensions: ["md"] }] });
       if (!chosen) return;
-      path = chosen;
+      await invoke("write_file", { path: chosen, contents: doc.source });
+      let mtime: number | null = null;
+      try {
+        mtime = await invoke<number>("file_mtime", { path: chosen });
+      } catch {
+        /* ignore */
+      }
+      patchDocById(doc.id, { path: chosen, dirty: false, mtime });
+      invoke("push_recent", { path: chosen }).catch(() => {});
+      refreshVault();
+      return;
     }
-    await invoke("write_file", { path, contents: doc.source });
-    let mtime: number | null = null;
     try {
-      mtime = await invoke<number>("file_mtime", { path });
-    } catch {
-      /* ignore */
+      await saveDocById(doc.id, { manual: true });
+    } catch (e) {
+      await message(`The file could not be saved.\n\n${e}`, { title: "Save", kind: "error" });
+      return;
     }
-    patchDocById(doc.id, { path, dirty: false, mtime });
-    invoke("push_recent", { path }).catch(() => {});
-    refreshVault();
-  }, [getActive, patchDocById, refreshVault]);
+    invoke("push_recent", { path: doc.path }).catch(() => {});
+  }, [getActive, saveDocById, patchDocById, refreshVault]);
+
+  useEffect(() => {
+    if (!prefs.autosave) return;
+    const dirtyWithPath = docs.filter((d) => d.dirty && d.path);
+    if (dirtyWithPath.length === 0) return;
+    const timer = setTimeout(() => {
+      dirtyWithPath.forEach((d) => saveDocById(d.id));
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [docs, prefs.autosave, saveDocById]);
+
+  // Flush pending autosaves when the window loses focus.
+  useEffect(() => {
+    if (!prefs.autosave) return;
+    const onBlur = () => {
+      docsRef.current.filter((d) => d.dirty && d.path).forEach((d) => saveDocById(d.id));
+    };
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+  }, [prefs.autosave, saveDocById]);
 
   const exportAs = useCallback(
     async (kind: ExportKind) => {
@@ -317,6 +381,7 @@ function App() {
           filters: [{ name: "Word Document", extensions: ["docx"] }],
         });
         if (!chosen) return;
+        const { markdownToDocxBase64 } = await import("./export");
         const data = await markdownToDocxBase64(src);
         await invoke("write_file_base64", { path: chosen, data });
         return;
@@ -324,8 +389,11 @@ function App() {
 
       let contents: string;
       if (kind === "txt") contents = src;
-      else if (kind === "html") contents = htmlDocument(basename(doc.path), markdownToHtml(src));
-      else contents = JSON.stringify(markdownToAst(src), null, 2);
+      else {
+        const ex = await import("./export");
+        if (kind === "html") contents = ex.htmlDocument(basename(doc.path), ex.markdownToHtml(src));
+        else contents = JSON.stringify(ex.markdownToAst(src), null, 2);
+      }
 
       const chosen = await save({
         defaultPath: `${name}.${kind}`,
@@ -359,6 +427,7 @@ function App() {
   );
 
   const copyAsHtml = useCallback(async () => {
+    const { markdownToHtml } = await import("./export");
     const html = markdownToHtml(getActive().source);
     try {
       if (navigator.clipboard && "write" in navigator.clipboard) {
@@ -395,10 +464,7 @@ function App() {
 
   // ----- Image attachments -----
   const attachImage = useCallback(
-    async (
-      view: EditorView,
-      payload: { kind: "data"; data: string; ext: string } | { kind: "file"; source: string },
-    ) => {
+    async (view: EditorView, payload: AttachPayload) => {
       const doc = getActive();
       if (!doc.path) {
         await message("Save the document first so images can be stored alongside it.", {
@@ -430,59 +496,24 @@ function App() {
     [getActive],
   );
 
-  const editorImageExt = useMemo(
-    () =>
-      EditorView.domEventHandlers({
-        paste: (event, view) => {
-          const items = event.clipboardData?.items;
-          if (!items) return false;
-          for (let idx = 0; idx < items.length; idx++) {
-            const it = items[idx];
-            if (it.kind === "file" && it.type.startsWith("image/")) {
-              const file = it.getAsFile();
-              if (!file) continue;
-              event.preventDefault();
-              const ext = it.type.split("/")[1] || "png";
-              const reader = new FileReader();
-              reader.onload = () => {
-                const result = String(reader.result);
-                const base64 = result.split(",")[1] ?? "";
-                attachImage(view, { kind: "data", data: base64, ext });
-              };
-              reader.readAsDataURL(file);
-              return true;
-            }
-          }
-          return false;
-        },
-      }),
-    [attachImage],
-  );
   // Stable getters so the completion source always sees the current vault.
   const filesRef = useRef<FileEntry[]>(files);
   filesRef.current = files;
   const tagsRef = useRef<string[]>([]);
   tagsRef.current = tagList.map(([t]) => t);
-  const wikiExt = useMemo(
-    () => wikiCompletion(() => filesRef.current, () => tagsRef.current),
-    [],
-  );
+  const getFiles = useCallback(() => filesRef.current, []);
+  const getTags = useCallback(() => tagsRef.current, []);
 
-  const editorExtras = useMemo(() => {
-    const ext: Extension[] = [editorImageExt, wikiExt];
-    if (prefs.pasteAsMarkdown) ext.push(pasteMarkdown);
-    if (prefs.spellcheck) ext.push(spellcheck);
-    if (prefs.focusMode) ext.push(focusMode);
-    if (prefs.typewriter) ext.push(typewriter);
-    return ext;
-  }, [
-    editorImageExt,
-    wikiExt,
-    prefs.pasteAsMarkdown,
-    prefs.spellcheck,
-    prefs.focusMode,
-    prefs.typewriter,
-  ]);
+  // Assembled into CodeMirror extensions inside the lazily loaded EditorPane.
+  const editorFeatures = useMemo(
+    () => ({
+      focusMode: prefs.focusMode,
+      typewriter: prefs.typewriter,
+      spellcheck: prefs.spellcheck,
+      pasteAsMarkdown: prefs.pasteAsMarkdown,
+    }),
+    [prefs.focusMode, prefs.typewriter, prefs.spellcheck, prefs.pasteAsMarkdown],
+  );
 
   const runOnEditor = useCallback((fn: (view: EditorView) => void) => {
     const view = cmRef.current?.view;
@@ -506,6 +537,128 @@ function App() {
       dirty: true,
     });
   }, [getActive, patchDocById]);
+
+  // ----- Templates, daily notes, folder-wide replace -----
+  const templates = useMemo(
+    () => files.filter((f) => isInFolder(f.name, prefs.templatesFolder)),
+    [files, prefs.templatesFolder],
+  );
+
+  const createNote = useCallback(
+    async (name: string, templatePath: string | null): Promise<string | null> => {
+      if (!folderPath) return "Open a folder first.";
+      const fileName = noteFileName(name);
+      if (!fileName) return "Give the note a name.";
+      const sep = folderPath.includes("\\") ? "\\" : "/";
+      const path = folderPath + sep + fileName;
+      if (await invoke<boolean>("path_exists", { path }).catch(() => false)) {
+        return "A note with that name already exists.";
+      }
+      let contents = "";
+      if (templatePath) {
+        try {
+          const tpl = await invoke<string>("read_file", { path: templatePath });
+          contents = fillTemplate(tpl, fileName.replace(/\.[^.]+$/, ""));
+        } catch {
+          return "The template could not be read.";
+        }
+      }
+      try {
+        await invoke("write_file", { path, contents });
+      } catch (e) {
+        return String(e);
+      }
+      setNewNoteOpen(false);
+      await loadFolder(folderPath);
+      refreshVault();
+      await openPath(path);
+      setMode("edit");
+      return null;
+    },
+    [folderPath, loadFolder, refreshVault, openPath],
+  );
+
+  const openDailyNote = useCallback(async () => {
+    if (!folderPath) {
+      await message("Open a folder first — daily notes live inside it.", {
+        title: "Daily note",
+        kind: "warning",
+      });
+      return;
+    }
+    const sep = folderPath.includes("\\") ? "\\" : "/";
+    const sub = prefs.dailyFolder.trim().replace(/^[\\/]+|[\\/]+$/g, "");
+    const today = formatDate(new Date());
+    const path = (sub ? folderPath + sep + sub : folderPath) + sep + today + ".md";
+    const exists = await invoke<boolean>("path_exists", { path }).catch(() => false);
+    if (!exists) {
+      // A template whose file is named "Daily" seeds new daily notes.
+      let contents = `# ${today}\n\n`;
+      const tpl = filesRef.current.find(
+        (f) => isInFolder(f.name, prefs.templatesFolder) && /^daily\./i.test(basename(f.path)),
+      );
+      if (tpl) {
+        try {
+          contents = fillTemplate(await invoke<string>("read_file", { path: tpl.path }), today);
+        } catch {
+          /* fall back to the date heading */
+        }
+      }
+      try {
+        await invoke("write_file", { path, contents });
+      } catch (e) {
+        await message(`The daily note could not be created.\n\n${e}`, {
+          title: "Daily note",
+          kind: "error",
+        });
+        return;
+      }
+      await loadFolder(folderPath);
+      refreshVault();
+    }
+    await openPath(path);
+  }, [folderPath, prefs.dailyFolder, prefs.templatesFolder, loadFolder, refreshVault, openPath]);
+
+  const replaceInFolder = useCallback(
+    async (query: string, replacement: string) => {
+      if (!folderPath || !query) return;
+      if (docsRef.current.some((d) => d.dirty && d.path)) {
+        await message(
+          "Save or discard unsaved changes first, so the replace doesn't overwrite them.",
+          { title: "Replace in folder", kind: "warning" },
+        );
+        return;
+      }
+      const ok = await ask(
+        `Replace every occurrence of “${query}” with “${replacement}” across ${basename(folderPath)}?\n\nMatching is case-sensitive. A snapshot of each changed file is kept in File History.`,
+        { title: "Replace in folder", kind: "warning", okLabel: "Replace", cancelLabel: "Cancel" },
+      );
+      if (!ok) return;
+      try {
+        const res = await invoke<{ files: number; occurrences: number; failed: number }>(
+          "replace_in_dir",
+          { path: folderPath, query, replacement },
+        );
+        const summary =
+          res.files === 0 && res.failed === 0
+            ? "No occurrences found. The search box matches case-insensitively, but replace is case-sensitive."
+            : `Replaced ${res.occurrences} occurrence${res.occurrences === 1 ? "" : "s"} in ${res.files} file${res.files === 1 ? "" : "s"}.`;
+        await message(
+          res.failed > 0
+            ? `${summary}\n\n${res.failed} file${res.failed === 1 ? "" : "s"} could not be written and ${res.failed === 1 ? "was" : "were"} left unchanged.`
+            : summary,
+          { title: "Replace in folder", kind: res.failed > 0 ? "warning" : "info" },
+        );
+      } catch (e) {
+        await message(`Replace failed.\n\n${e}`, { title: "Replace in folder", kind: "error" });
+      } finally {
+        // Files may have changed even when the command errored part-way.
+        refreshVault();
+        setSearchNonce((n) => n + 1);
+      }
+    },
+    [folderPath, refreshVault],
+  );
 
   const wrapSelection = useCallback((before: string, after = before, placeholder = "") => {
     const view = cmRef.current?.view;
@@ -751,7 +904,7 @@ function App() {
           if (mode === "preview") setFindOpen(true);
           else {
             const v = cmRef.current?.view;
-            if (v) openSearchPanel(v);
+            if (v) import("@codemirror/search").then((m) => m.openSearchPanel(v));
           }
           break;
         case "quick_switcher":
@@ -767,6 +920,25 @@ function App() {
         }
         case "new_tab":
           newDoc();
+          break;
+        case "new_note":
+          if (!folderPath) {
+            message("Open a folder first, then create notes inside it.", {
+              title: "New note",
+              kind: "warning",
+            });
+          } else setNewNoteOpen(true);
+          break;
+        case "daily_note":
+          openDailyNote();
+          break;
+        case "history":
+          if (getActive().path) setHistoryOpen(true);
+          else
+            message("Save the document first — history tracks files on disk.", {
+              title: "File History",
+              kind: "warning",
+            });
           break;
         case "compare":
           startCompare();
@@ -811,6 +983,8 @@ function App() {
       newDoc,
       startCompare,
       addProperties,
+      folderPath,
+      openDailyNote,
     ],
   );
 
@@ -932,14 +1106,17 @@ function App() {
 
   const commands: Command[] = [
     { id: "new_tab", label: "New tab", hint: "⌘T" },
+    { id: "new_note", label: "New note from template…", hint: "⌘N" },
+    { id: "daily_note", label: "Open today's daily note", hint: "⌘⇧D" },
     { id: "open", label: "Open file…", hint: "⌘O" },
     { id: "open_folder", label: "Open folder…", hint: "⌘⇧O" },
     { id: "save", label: "Save", hint: "⌘S" },
     { id: "reload", label: "Reload from disk", hint: "⌘R" },
+    { id: "history", label: "File history…" },
     { id: "toggle_mode", label: "Toggle edit / preview", hint: "⌘E" },
     { id: "toggle_split", label: "Toggle split view", hint: "⌘⇧E" },
     { id: "present", label: "Start presentation", hint: "⌘⇧P" },
-    { id: "local_graph", label: "Local graph", hint: "⌘⇧G" },
+    { id: "local_graph", label: "Graph", hint: "⌘⇧G" },
     { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark this file", hint: "⌘D" },
     { id: "add_properties", label: "Add properties" },
     { id: "compare", label: "Compare two files" },
@@ -1078,7 +1255,7 @@ function App() {
           <button
             className="icon-btn"
             onClick={() => setGraphOpen(true)}
-            title="Local graph (⌘⇧G)"
+            title="Graph (⌘⇧G)"
             disabled={!filePath || !folderPath}
           >
             <GraphIcon />
@@ -1140,6 +1317,8 @@ function App() {
             bookmarks={prefs.bookmarks}
             onToggleBookmark={prefs.toggleBookmark}
             backlinks={backlinks}
+            onReplaceAll={replaceInFolder}
+            searchNonce={searchNonce}
           />
         )}
 
@@ -1278,7 +1457,9 @@ function App() {
             }}
           >
             {compare ? (
-              <DiffView a={docA?.source ?? ""} b={docB?.source ?? ""} dark={prefs.dark} />
+              <Suspense fallback={<div className="lazy-fallback" />}>
+                <DiffView a={docA?.source ?? ""} b={docB?.source ?? ""} dark={prefs.dark} />
+              </Suspense>
             ) : mode === "preview" ? (
               <div className="markdown-body">
                 <FrontmatterBar
@@ -1300,28 +1481,38 @@ function App() {
                 />
               </div>
             ) : mode === "split" ? (
-              <SplitView
-                docId={active.id}
-                value={source}
-                cmRef={cmRef}
-                extra={editorExtras}
-                onChange={(value) => patchDocById(active.id, { source: value, dirty: true })}
-                dark={prefs.dark}
-                basePath={baseDir}
-                onToggleTask={toggleTask}
-                onOpenLocal={openPath}
-                blockRemoteImages={prefs.blockRemoteImages}
-                resolveWiki={resolveWiki}
-                onTagClick={onTagClick}
-              />
+              <Suspense fallback={<div className="lazy-fallback" />}>
+                <SplitView
+                  docId={active.id}
+                  value={source}
+                  cmRef={cmRef}
+                  features={editorFeatures}
+                  onAttachImage={attachImage}
+                  getFiles={getFiles}
+                  getTags={getTags}
+                  onChange={(value) => patchDocById(active.id, { source: value, dirty: true })}
+                  dark={prefs.dark}
+                  basePath={baseDir}
+                  onToggleTask={toggleTask}
+                  onOpenLocal={openPath}
+                  blockRemoteImages={prefs.blockRemoteImages}
+                  resolveWiki={resolveWiki}
+                  onTagClick={onTagClick}
+                />
+              </Suspense>
             ) : (
-              <EditorPane
-                docId={active.id}
-                value={source}
-                cmRef={cmRef}
-                extra={editorExtras}
-                onChange={(value) => patchDocById(active.id, { source: value, dirty: true })}
-              />
+              <Suspense fallback={<div className="lazy-fallback" />}>
+                <EditorPane
+                  docId={active.id}
+                  value={source}
+                  cmRef={cmRef}
+                  features={editorFeatures}
+                  onAttachImage={attachImage}
+                  getFiles={getFiles}
+                  getTags={getTags}
+                  onChange={(value) => patchDocById(active.id, { source: value, dirty: true })}
+                />
+              </Suspense>
             )}
           </main>
 
@@ -1372,11 +1563,34 @@ function App() {
       )}
 
       {graphOpen && filePath && (
-        <GraphView
-          centerPath={filePath}
-          resolver={resolver}
-          onOpen={openPath}
-          onClose={() => setGraphOpen(false)}
+        <Suspense fallback={null}>
+          <GraphView
+            centerPath={filePath}
+            resolver={resolver}
+            onOpen={openPath}
+            onClose={() => setGraphOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {historyOpen && filePath && (
+        <Suspense fallback={null}>
+          <HistoryView
+            path={filePath}
+            currentSource={source}
+            dark={prefs.dark}
+            onRestore={(text) => patchDocById(active.id, { source: text, dirty: true })}
+            onClose={() => setHistoryOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {newNoteOpen && folderPath && (
+        <NewNoteModal
+          folderName={basename(folderPath)}
+          templates={templates}
+          onCreate={createNote}
+          onClose={() => setNewNoteOpen(false)}
         />
       )}
     </div>

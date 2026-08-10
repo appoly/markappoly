@@ -19,6 +19,9 @@ const LINE_SPACING_KEY = "mv.lineSpacing";
 const CUSTOM_CSS_KEY = "mv.customCss";
 const BLOCK_REMOTE_IMG_KEY = "mv.blockRemoteImages";
 const BOOKMARKS_KEY = "mv.bookmarks";
+const AUTOSAVE_KEY = "mv.autosave";
+const TEMPLATES_FOLDER_KEY = "mv.templatesFolder";
+const DAILY_FOLDER_KEY = "mv.dailyFolder";
 
 const WIDTHS: Record<ReadingWidth, string> = {
   narrow: "600px",
@@ -66,6 +69,11 @@ export function usePreferences() {
     load(BLOCK_REMOTE_IMG_KEY, false),
   );
   const [bookmarks, setBookmarks] = useState<string[]>(() => load(BOOKMARKS_KEY, []));
+  const [autosave, setAutosave] = useState<boolean>(() => load(AUTOSAVE_KEY, false));
+  const [templatesFolder, setTemplatesFolder] = useState<string>(() =>
+    load(TEMPLATES_FOLDER_KEY, "Templates"),
+  );
+  const [dailyFolder, setDailyFolder] = useState<string>(() => load(DAILY_FOLDER_KEY, ""));
   const [systemDark, setSystemDark] = useState(
     () => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false,
   );
@@ -135,6 +143,15 @@ export function usePreferences() {
   useEffect(() => {
     localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bookmarks));
   }, [bookmarks]);
+  useEffect(() => {
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(autosave));
+  }, [autosave]);
+  useEffect(() => {
+    localStorage.setItem(TEMPLATES_FOLDER_KEY, JSON.stringify(templatesFolder));
+  }, [templatesFolder]);
+  useEffect(() => {
+    localStorage.setItem(DAILY_FOLDER_KEY, JSON.stringify(dailyFolder));
+  }, [dailyFolder]);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -189,5 +206,11 @@ export function usePreferences() {
     setBlockRemoteImages,
     bookmarks,
     toggleBookmark,
+    autosave,
+    setAutosave,
+    templatesFolder,
+    setTemplatesFolder,
+    dailyFolder,
+    setDailyFolder,
   };
 }

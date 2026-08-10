@@ -109,9 +109,15 @@ fn read_file(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
-/// Write UTF-8 contents to an absolute path chosen via the dialog.
+/// Write UTF-8 contents to an absolute path, creating parent folders as needed
+/// (daily notes can live in a subfolder that doesn't exist yet).
 #[tauri::command]
 fn write_file(path: String, contents: String) -> Result<(), String> {
+    if let Some(parent) = Path::new(&path).parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
     fs::write(&path, contents).map_err(|e| e.to_string())
 }
 
@@ -470,6 +476,184 @@ mod index_tests {
     }
 }
 
+// ---------- File history (snapshots) ----------
+
+/// FNV-1a — a stable filename-safe key for a file path; no crypto needed.
+fn fnv1a(s: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in s.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Per-file snapshot folder under the app data dir, keyed by hashed path plus a
+/// readable stem so the folder is identifiable by hand.
+fn history_dir_for<R: Runtime>(app: &AppHandle<R>, path: &str) -> Option<PathBuf> {
+    let key = path_key(Path::new(path));
+    let stem: String = Path::new(path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "note".into())
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(40)
+        .collect();
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("history").join(format!("{:016x}-{}", fnv1a(&key), stem)))
+}
+
+/// Snapshots in a history folder, newest first: (timestamp ms, file path).
+fn list_snapshot_files(dir: &Path) -> Vec<(u64, PathBuf)> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return vec![];
+    };
+    let mut out: Vec<(u64, PathBuf)> = entries
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            let ts = p.file_stem()?.to_str()?.parse::<u64>().ok()?;
+            Some((ts, p))
+        })
+        .collect();
+    out.sort_by(|a, b| b.0.cmp(&a.0));
+    out
+}
+
+const SNAPSHOT_MIN_INTERVAL_MS: u64 = 5 * 60 * 1000;
+const SNAPSHOT_KEEP: usize = 30;
+
+/// Copy the current on-disk contents of `path` into its history folder. Rate
+/// limited (unless forced) so autosave doesn't churn out near-identical
+/// snapshots; identical content is never duplicated.
+fn take_snapshot<R: Runtime>(app: &AppHandle<R>, path: &str, force: bool) -> Result<(), String> {
+    let src = Path::new(path);
+    if !src.is_file() {
+        return Ok(());
+    }
+    let Some(dir) = history_dir_for(app, path) else {
+        return Ok(());
+    };
+    let existing = list_snapshot_files(&dir);
+    let now = now_ms();
+    if let Some((ts, latest)) = existing.first() {
+        if let (Ok(a), Ok(b)) = (fs::read(src), fs::read(latest)) {
+            if a == b {
+                return Ok(());
+            }
+        }
+        if !force && now.saturating_sub(*ts) < SNAPSHOT_MIN_INTERVAL_MS {
+            return Ok(());
+        }
+    }
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::copy(src, dir.join(format!("{}.md", now))).map_err(|e| e.to_string())?;
+    let _ = fs::write(dir.join("path.txt"), path);
+    for (_, p) in list_snapshot_files(&dir).iter().skip(SNAPSHOT_KEEP) {
+        let _ = fs::remove_file(p);
+    }
+    Ok(())
+}
+
+/// Record a snapshot of a file's current on-disk state (called before saving).
+#[tauri::command]
+fn snapshot_file(app: AppHandle, path: String, force: Option<bool>) -> Result<(), String> {
+    take_snapshot(&app, &path, force.unwrap_or(false))
+}
+
+#[derive(Serialize)]
+struct Snapshot {
+    ts: u64,
+    path: String,
+    size: u64,
+}
+
+/// Saved snapshots for a file, newest first (for the File History view).
+#[tauri::command]
+fn list_snapshots(app: AppHandle, path: String) -> Vec<Snapshot> {
+    let Some(dir) = history_dir_for(&app, &path) else {
+        return vec![];
+    };
+    list_snapshot_files(&dir)
+        .into_iter()
+        .map(|(ts, p)| {
+            let size = fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+            Snapshot {
+                ts,
+                path: p.to_string_lossy().to_string(),
+                size,
+            }
+        })
+        .collect()
+}
+
+// ---------- Folder-wide replace ----------
+
+#[derive(Serialize)]
+struct ReplaceSummary {
+    files: u32,
+    occurrences: u32,
+    failed: u32,
+}
+
+/// Literal, case-sensitive search & replace across every Markdown file in a
+/// folder. Each modified file gets a forced history snapshot first, so the
+/// operation is recoverable. A file that can't be written is counted and
+/// skipped rather than aborting a half-applied replace.
+#[tauri::command]
+fn replace_in_dir(
+    app: AppHandle,
+    path: String,
+    query: String,
+    replacement: String,
+) -> Result<ReplaceSummary, String> {
+    let base = PathBuf::from(&path);
+    if !base.is_dir() {
+        return Err("not a directory".into());
+    }
+    if query.is_empty() {
+        return Err("nothing to search for".into());
+    }
+    let mut files_list = Vec::new();
+    collect_markdown(&base, &base, &mut files_list);
+
+    let mut files = 0u32;
+    let mut occurrences = 0u32;
+    let mut failed = 0u32;
+    for f in &files_list {
+        let Ok(content) = fs::read_to_string(&f.path) else {
+            continue;
+        };
+        let count = content.matches(&query).count() as u32;
+        if count == 0 {
+            continue;
+        }
+        let _ = take_snapshot(&app, &f.path, true);
+        let updated = content.replace(&query, &replacement);
+        if fs::write(&f.path, updated).is_err() {
+            failed += 1;
+            continue;
+        }
+        files += 1;
+        occurrences += count;
+    }
+    Ok(ReplaceSummary {
+        files,
+        occurrences,
+        failed,
+    })
+}
+
 // ---------- Image attachments ----------
 
 /// Save a pasted/dropped image next to the current document (in an `assets/`
@@ -716,11 +900,23 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>, recents: &[String]) -> tauri::
         .item(&recent_menu)
         .separator()
         .item(
+            &MenuItemBuilder::with_id("new_note", "New Note…")
+                .accelerator("CmdOrCtrl+N")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("daily_note", "Open Today's Note")
+                .accelerator("CmdOrCtrl+Shift+D")
+                .build(app)?,
+        )
+        .separator()
+        .item(
             &MenuItemBuilder::with_id("save", "Save")
                 .accelerator("CmdOrCtrl+S")
                 .build(app)?,
         )
         .item(&MenuItemBuilder::with_id("reload", "Reload from Disk").build(app)?)
+        .item(&MenuItemBuilder::with_id("history", "File History…").build(app)?)
         .separator()
         .item(
             &MenuItemBuilder::with_id("bookmark", "Bookmark This File")
@@ -845,6 +1041,9 @@ pub fn run() {
             cli_file_arg,
             take_pending_open,
             search_dir,
+            replace_in_dir,
+            snapshot_file,
+            list_snapshots,
             save_image,
             attach_image_file,
             pandoc_available,

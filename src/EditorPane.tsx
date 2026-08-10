@@ -1,29 +1,102 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import CodeMirror, { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { search } from "@codemirror/search";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { editorTheme, editorHighlight } from "./editorTheme";
+import { focusMode, typewriter, spellcheck, pasteMarkdown } from "./editorFeatures";
+import { wikiCompletion } from "./wikiComplete";
 import { Preview } from "./markdown";
 import { useDebouncedValue } from "./useDebouncedValue";
+import type { FileEntry } from "./Sidebar";
 
 const EDITOR_BASE: Extension[] = [editorTheme, editorHighlight, EditorView.lineWrapping];
+
+export type AttachPayload =
+  | { kind: "data"; data: string; ext: string }
+  | { kind: "file"; source: string };
+
+/** Preference-driven editor behaviours, assembled into extensions here so the
+ * whole CodeMirror stack stays out of the startup bundle. */
+export type EditorFeatures = {
+  focusMode: boolean;
+  typewriter: boolean;
+  spellcheck: boolean;
+  pasteAsMarkdown: boolean;
+};
+
+export type EditorProps = {
+  docId: string;
+  value: string;
+  cmRef: React.RefObject<ReactCodeMirrorRef | null>;
+  onChange: (v: string) => void;
+  features: EditorFeatures;
+  onAttachImage: (view: EditorView, payload: AttachPayload) => void;
+  getFiles: () => FileEntry[];
+  getTags: () => string[];
+};
 
 /** The CodeMirror source editor, shared by the Edit and Split views. */
 export function EditorPane({
   docId,
   value,
   cmRef,
-  extra,
   onChange,
-}: {
-  docId: string;
-  value: string;
-  cmRef: React.RefObject<ReactCodeMirrorRef | null>;
-  extra: Extension[];
-  onChange: (v: string) => void;
-}) {
+  features,
+  onAttachImage,
+  getFiles,
+  getTags,
+}: EditorProps) {
+  // Pasted images become attachments; registered before pasteMarkdown so image
+  // pastes never reach the rich-text handler.
+  const imageExt = useMemo(
+    () =>
+      EditorView.domEventHandlers({
+        paste: (event, view) => {
+          const items = event.clipboardData?.items;
+          if (!items) return false;
+          for (let idx = 0; idx < items.length; idx++) {
+            const it = items[idx];
+            if (it.kind === "file" && it.type.startsWith("image/")) {
+              const file = it.getAsFile();
+              if (!file) continue;
+              event.preventDefault();
+              const ext = it.type.split("/")[1] || "png";
+              const reader = new FileReader();
+              reader.onload = () => {
+                const result = String(reader.result);
+                const base64 = result.split(",")[1] ?? "";
+                onAttachImage(view, { kind: "data", data: base64, ext });
+              };
+              reader.readAsDataURL(file);
+              return true;
+            }
+          }
+          return false;
+        },
+      }),
+    [onAttachImage],
+  );
+
+  const wikiExt = useMemo(() => wikiCompletion(getFiles, getTags), [getFiles, getTags]);
+
+  const extensions = useMemo(() => {
+    const ext: Extension[] = [markdown(), search(), ...EDITOR_BASE, imageExt, wikiExt];
+    if (features.pasteAsMarkdown) ext.push(pasteMarkdown);
+    if (features.spellcheck) ext.push(spellcheck);
+    if (features.focusMode) ext.push(focusMode);
+    if (features.typewriter) ext.push(typewriter);
+    return ext;
+  }, [
+    imageExt,
+    wikiExt,
+    features.pasteAsMarkdown,
+    features.spellcheck,
+    features.focusMode,
+    features.typewriter,
+  ]);
+
   return (
     <CodeMirror
       key={docId}
@@ -33,7 +106,7 @@ export function EditorPane({
       height="100%"
       theme="none"
       basicSetup={{ foldGutter: false, syntaxHighlighting: false, autocompletion: false }}
-      extensions={[markdown(), search(), ...EDITOR_BASE, ...extra]}
+      extensions={extensions}
       onChange={onChange}
       onCreateEditor={(view) => {
         // WKWebView can lay the gutter out before the container has its final
@@ -48,11 +121,6 @@ export function EditorPane({
 
 /** Editor and live preview side by side, with linked scrolling. */
 export function SplitView({
-  docId,
-  value,
-  cmRef,
-  extra,
-  onChange,
   dark,
   basePath,
   onToggleTask,
@@ -60,12 +128,8 @@ export function SplitView({
   blockRemoteImages,
   resolveWiki,
   onTagClick,
-}: {
-  docId: string;
-  value: string;
-  cmRef: React.RefObject<ReactCodeMirrorRef | null>;
-  extra: Extension[];
-  onChange: (v: string) => void;
+  ...editor
+}: EditorProps & {
   dark: boolean;
   basePath?: string;
   onToggleTask: (i: number) => void;
@@ -77,10 +141,10 @@ export function SplitView({
   const previewRef = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
   // Debounce the preview so typing stays snappy on large documents.
-  const previewSource = useDebouncedValue(value, 140);
+  const previewSource = useDebouncedValue(editor.value, 140);
 
   useEffect(() => {
-    const scroller = cmRef.current?.view?.scrollDOM;
+    const scroller = editor.cmRef.current?.view?.scrollDOM;
     const preview = previewRef.current;
     if (!scroller || !preview) return;
     const sync = (from: HTMLElement, to: HTMLElement) => {
@@ -100,12 +164,12 @@ export function SplitView({
       scroller.removeEventListener("scroll", onEditor);
       preview.removeEventListener("scroll", onPreview);
     };
-  }, [cmRef, docId]);
+  }, [editor.cmRef, editor.docId]);
 
   return (
     <div className="split">
       <div className="split-pane split-editor">
-        <EditorPane docId={docId} value={value} cmRef={cmRef} extra={extra} onChange={onChange} />
+        <EditorPane {...editor} />
       </div>
       <div className="split-pane split-preview" ref={previewRef}>
         <div className="markdown-body">
