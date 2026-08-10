@@ -802,6 +802,14 @@ function App() {
     });
   }, [docs, activeId, mode, folderPath, sessionReady]);
 
+  // The graph and history modals can't outlive the file they were opened for.
+  // Without this, the flag stays set while nothing renders and the modal
+  // reappears unexpectedly the next time a file opens.
+  useEffect(() => {
+    if (!filePath || !folderPath) setGraphOpen(false);
+    if (!filePath) setHistoryOpen(false);
+  }, [filePath, folderPath]);
+
   // ----- Quit guard for dirty docs -----
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -911,7 +919,14 @@ function App() {
           setSwitcherOpen((o) => !o);
           break;
         case "local_graph":
-          setGraphOpen((o) => !o);
+          if (!getActive().path || !folderPath) {
+            message("Open a folder, then a file inside it, to see the graph.", {
+              title: "Graph",
+              kind: "warning",
+            });
+          } else {
+            setGraphOpen((o) => !o);
+          }
           break;
         case "bookmark": {
           const p = getActive().path;
