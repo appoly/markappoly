@@ -90,6 +90,8 @@ git push origin v0.2.0
 
 The workflow builds every platform, creates a **draft** GitHub Release with the installers attached, and (when the signing key secret is set) attaches the updater `latest.json`. Review the draft and publish it.
 
+You can also dispatch the workflow by tag (Actions → Release → Run workflow) and optionally paste release notes. The daily security job uses that path when it remediates an advisory.
+
 **Required repo secrets** (Settings → Secrets and variables → Actions):
 
 | Secret | Needed for | Status |
@@ -100,3 +102,14 @@ The workflow builds every platform, creates a **draft** GitHub Release with the 
 | `APPLE_API_ISSUER` / `APPLE_API_KEY` / `APPLE_API_KEY_BASE64` | macOS notarization (App Store Connect API key) | ✅ set |
 
 macOS builds are signed with the Developer ID certificate and notarized via the App Store Connect API key. The workflow decodes `APPLE_API_KEY_BASE64` into a `.p8` on the runner and points `APPLE_API_KEY_PATH` at it, so downloaded `.dmg`s open with a normal double-click — no Gatekeeper warning. The signing `.p12` was exported from Keychain and stored only as the encrypted `APPLE_CERTIFICATE` secret.
+
+## 6. Daily security audit
+
+`.github/workflows/daily-security.yml` runs every day at 06:00 UTC (and on demand).
+
+1. `npm audit` (high/critical, production deps, honouring `audit-ci.jsonc`) and `cargo audit`.
+2. If a non-breaking fix exists: `npm audit fix` / `cargo audit fix`, bump the patch version in `package.json`, `Cargo.toml`, and `tauri.conf.json`.
+3. After unit tests and a frontend build pass, it commits, tags `vX.Y.Z`, and dispatches the Release workflow above so a signed draft appears on GitHub Releases.
+4. If something high/critical remains and cannot be auto-fixed, it opens (or comments on) an **Outstanding dependency vulnerabilities** issue instead of shipping.
+
+It will not cut a release for allowlisted, still-unpatched advisories. The job needs permission to push to `main` (or a bypass for the Actions bot if the branch is protected).

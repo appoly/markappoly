@@ -6,8 +6,10 @@ Markappoly is distributed through GitHub Releases, and security fixes land on th
 
 | Version | Supported |
 | ------- | --------- |
-| 0.4.x   | ✅ |
-| < 0.4   | ❌ |
+| Latest release (0.7.x) | ✅ |
+| Older releases | ❌ |
+
+A scheduled GitHub Action runs the npm and Rust dependency audits every day. If a high or critical advisory has a non-breaking fix, the job applies it, bumps the patch version, and opens a **draft** GitHub Release through the usual signed-build workflow. Findings with no upstream patch (see `audit-ci.jsonc`) are left on the allowlist and do not cut a release.
 
 ## Reporting a vulnerability
 

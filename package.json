@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "audit": "npx --yes audit-ci@^7 --config audit-ci.jsonc --show-found"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.19.0",
