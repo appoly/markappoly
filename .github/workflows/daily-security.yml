@@ -1,0 +1,159 @@
+name: Daily security audit
+
+on:
+  schedule:
+    # 06:00 UTC — after the previous day's advisory databases have settled.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# A newer run on main cancels an in-flight audit so we never double-tag.
+concurrency:
+  group: daily-security
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+jobs:
+  audit:
+    name: Audit, remediate, release
+    runs-on: ubuntu-22.04
+    # Schedule only fires on the default branch. Manual runs are allowed from
+    # any ref so the scan can be tested; tagging still requires main.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Scan and apply safe remediations
+        id: scan
+        run: node scripts/security-release.mjs --apply
+
+      - name: Job summary
+        if: always() && steps.scan.outcome == 'success'
+        env:
+          REMAINING: ${{ steps.scan.outputs.remaining }}
+          NOTES: ${{ steps.scan.outputs.notes }}
+        run: |
+          {
+            echo "## Security audit"
+            echo ""
+            echo "- remediated: \`${{ steps.scan.outputs.remediated }}\`"
+            echo "- audit_ok: \`${{ steps.scan.outputs.audit_ok }}\`"
+            echo "- version: \`${{ steps.scan.outputs.version }}\`"
+            if [ -n "${REMAINING}" ]; then
+              echo ""
+              echo "Outstanding:"
+              echo ""
+              echo '```'
+              printf '%s\n' "${REMAINING}"
+              echo '```'
+            fi
+            if [ -n "${NOTES}" ]; then
+              echo ""
+              echo "Release notes:"
+              echo ""
+              echo "${NOTES}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Unit tests
+        if: steps.scan.outputs.remediated == 'true' && steps.scan.outputs.audit_ok == 'true'
+        run: npm test
+
+      - name: Typecheck & build frontend
+        if: steps.scan.outputs.remediated == 'true' && steps.scan.outputs.audit_ok == 'true'
+        run: npm run build
+
+      - name: Commit, tag, and dispatch draft release
+        if: github.ref == 'refs/heads/main' && steps.scan.outputs.remediated == 'true' && steps.scan.outputs.audit_ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.scan.outputs.version }}
+          NOTES: ${{ steps.scan.outputs.notes }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add package.json package-lock.json \
+            src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+          git status --short
+          git commit -m "Release ${VERSION}: security dependency updates"
+          git pull --rebase origin main
+          git tag "v${VERSION}"
+          git push origin HEAD:main
+          git push origin "v${VERSION}"
+
+          # Pushing a tag with GITHUB_TOKEN does not trigger other workflows,
+          # so dispatch the existing Release workflow on the new tag.
+          node -e '
+            const fs = require("fs");
+            fs.writeFileSync("/tmp/release-dispatch.json", JSON.stringify({
+              ref: "v" + process.env.VERSION,
+              inputs: { notes: process.env.NOTES || "" },
+            }));
+          '
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/dispatches" \
+            --input /tmp/release-dispatch.json
+
+      - name: Open or update tracking issue
+        if: github.ref == 'refs/heads/main' && steps.scan.outputs.audit_ok != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REMAINING: ${{ steps.scan.outputs.remaining }}
+        run: |
+          set -euo pipefail
+          TITLE="Outstanding dependency vulnerabilities"
+          BODY="$(cat <<EOF
+          The daily security audit found high/critical advisories that could not be auto-remediated.
+
+          \`\`\`
+          ${REMAINING}
+          \`\`\`
+
+          Allowlisted findings (see \`audit-ci.jsonc\`) are ignored. Once a patched release exists, this job will apply it and open a draft GitHub Release.
+          EOF
+          )"
+          EXISTING="$(gh issue list --state open --search "in:title ${TITLE}" --json number --jq '.[0].number // empty')"
+          if [ -n "${EXISTING}" ]; then
+            gh issue comment "${EXISTING}" --body "${BODY}"
+          else
+            gh issue create --title "${TITLE}" --body "${BODY}"
+          fi
+
+      - name: Close tracking issue when clean
+        if: github.ref == 'refs/heads/main' && steps.scan.outputs.audit_ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TITLE="Outstanding dependency vulnerabilities"
+          EXISTING="$(gh issue list --state open --search "in:title ${TITLE}" --json number --jq '.[0].number // empty')"
+          if [ -n "${EXISTING}" ]; then
+            gh issue close "${EXISTING}" --reason completed --comment "The daily audit is clean again (allowlisted findings only)."
+          fi

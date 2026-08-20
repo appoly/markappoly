@@ -106,7 +106,7 @@ npm run tauri dev      # run the app with hot reload
 npm run tauri build    # produce a native installer for your OS
 ```
 
-**[DISTRIBUTION.md](DISTRIBUTION.md)** covers signing, notarization, the app icon, and auto-updates.
+**[DISTRIBUTION.md](DISTRIBUTION.md)** covers signing, notarization, the app icon, auto-updates, and the daily security-audit release. **[SECURITY.md](SECURITY.md)** is the vulnerability-reporting policy.
 
 **Stack:** React + TypeScript + Vite · Tauri v2 (Rust) · unified/remark/rehype · CodeMirror 6 · KaTeX · Mermaid · `remark-docx`
 
