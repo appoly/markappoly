@@ -41,6 +41,7 @@ import { FrontmatterBar } from "./FrontmatterBar";
 import { useLiveReload } from "./useLiveReload";
 import { useScrollSpy } from "./useScrollSpy";
 import { loadSession, saveSession } from "./session";
+import { createOpenQueue } from "./openQueue";
 import { basename, dirOf, MD_EXTENSIONS } from "./paths";
 import { makeDoc, type Doc, type ExportKind, type Mode } from "./types";
 import { WELCOME } from "./welcome";
@@ -225,6 +226,11 @@ function App() {
       console.error("open failed", e);
     }
   }, []);
+
+  // Files the OS asks us to open (Finder, "Open With", the command line) wait
+  // behind the session restore so the requested file ends up on top of the
+  // restored tabs and active, instead of buried by the restore's own selection.
+  const [openQueue] = useState(() => createOpenQueue(openPath));
 
   const openPathAtLine = useCallback(
     async (path: string, line: number) => {
@@ -780,6 +786,9 @@ function App() {
         }
         setMode(s.mode);
       }
+      if (cancelled) return;
+      // Anything requested from outside during the restore opens on top of it.
+      await openQueue.flush();
       if (!cancelled) setSessionReady(true);
     })();
     return () => {
@@ -1007,24 +1016,24 @@ function App() {
     const unlisteners = [
       listen<string>("menu", (e) => handleMenu(e.payload)),
       listen<string>("open-file", (e) => {
-        if (e.payload) openPath(e.payload);
+        if (e.payload) openQueue.request(e.payload);
       }),
     ];
     return () => {
       unlisteners.forEach((p) => p.then((f) => f()));
     };
-  }, [handleMenu, openPath]);
+  }, [handleMenu, openQueue]);
 
   useEffect(() => {
     invoke<string | null>("cli_file_arg")
       .then((p) => {
-        if (p) openPath(p);
+        if (p) openQueue.request(p);
       })
       .catch(() => {});
     invoke<string[]>("take_pending_open")
-      .then((paths) => paths.forEach((p) => openPath(p)))
+      .then((paths) => paths.forEach((p) => openQueue.request(p)))
       .catch(() => {});
-  }, [openPath]);
+  }, [openQueue]);
 
   useEffect(() => {
     invoke<boolean>("pandoc_available").then(setPandocOk).catch(() => {});
