@@ -8,6 +8,8 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
+    /* `image-size` is aliased to the local shim in vite.config.ts / vitest.config.ts */
+    "paths": { "image-size": ["./shims/image-size/index.d.ts"] },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,

@@ -3,13 +3,9 @@
   // Fail on high/critical advisories in shipped (non-dev) dependencies.
   "high": true,
   "skip-dev": true,
-  "allowlist": [
-    // image-size DoS via crafted ICNS/JXL/HEIF images (infinite loop). Pulled in
-    // by remark-docx for docx export. Every published version (<= 2.0.2) is
-    // affected and no patched release exists yet. Worst case here is a hung
-    // export of a malicious document, not code execution. Remove these once
-    // image-size ships a fix.
-    "GHSA-w3rx-r6r6-pgpr",
-    "GHSA-5p2g-fcmc-qvqq"
-  ]
+  // Advisories with no upstream fix can be allowlisted here by GHSA id, with a
+  // comment explaining the exposure. Prefer removing the package instead:
+  // image-size (pulled in by remark-docx) is replaced by an empty stub via
+  // `overrides` in package.json, with shims/image-size aliased in its place.
+  "allowlist": []
 }

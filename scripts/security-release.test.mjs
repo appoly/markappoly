@@ -18,10 +18,20 @@ describe("bumpPatch", () => {
   });
 });
 
+describe("allowlistedIdsFromConfig", () => {
+  it("parses the repo's audit-ci.jsonc", () => {
+    const text = readFileSync(resolve(import.meta.dirname, "../audit-ci.jsonc"), "utf8");
+    expect(() => allowlistedIdsFromConfig(text)).not.toThrow();
+  });
+});
+
 describe("collectNpmBlocking", () => {
-  const allow = allowlistedIdsFromConfig(
-    readFileSync(resolve(import.meta.dirname, "../audit-ci.jsonc"), "utf8"),
-  );
+  // A fixture rather than the repo's audit-ci.jsonc, so the test does not
+  // depend on what happens to be allowlisted at the time.
+  const allow = allowlistedIdsFromConfig(`{
+    // comments are allowed in audit-ci.jsonc
+    "allowlist": ["GHSA-w3rx-r6r6-pgpr", "GHSA-5p2g-fcmc-qvqq"]
+  }`);
 
   it("treats allowlisted GHSA ids and wrapper packages as non-blocking", () => {
     const blocking = collectNpmBlocking(

@@ -1,0 +1,17 @@
+{
+  "name": "@markdown-viewer/image-size",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local drop-in for the `image-size` package: reads width/height for the image formats remark-docx can embed (PNG, JPEG, GIF, BMP, SVG). Wired in through the `image-size` alias in vite.config.ts and vitest.config.ts; the registry package itself is replaced by an empty stub via `overrides` in the root package.json.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  }
+}
