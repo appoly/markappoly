@@ -9,6 +9,7 @@ export type SessionState = {
   activePath: string | null;
   mode: Mode;
   folderPath: string | null;
+  pathModes?: Record<string, Mode>;
 };
 
 const EMPTY: SessionState = {
@@ -24,16 +25,30 @@ export function loadSession(): SessionState {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return { ...EMPTY };
     const parsed = JSON.parse(raw) as Partial<SessionState>;
-    if (parsed.version !== 1 || !Array.isArray(parsed.paths)) return { ...EMPTY };
+    if (parsed.version !== 1 || !Array.isArray(parsed.paths))
+      return { ...EMPTY };
     return {
       version: 1,
       paths: parsed.paths.filter((p): p is string => typeof p === "string"),
-      activePath: typeof parsed.activePath === "string" ? parsed.activePath : null,
+      activePath:
+        typeof parsed.activePath === "string" ? parsed.activePath : null,
       mode:
-        parsed.mode === "edit" || parsed.mode === "split" || parsed.mode === "preview"
+        parsed.mode === "edit" ||
+        parsed.mode === "split" ||
+        parsed.mode === "preview"
           ? parsed.mode
           : "preview",
-      folderPath: typeof parsed.folderPath === "string" ? parsed.folderPath : null,
+      folderPath:
+        typeof parsed.folderPath === "string" ? parsed.folderPath : null,
+      ...(parsed.pathModes && typeof parsed.pathModes === "object"
+        ? {
+            pathModes: Object.fromEntries(
+              Object.entries(parsed.pathModes).filter(([, mode]) =>
+                ["preview", "edit", "split"].includes(mode),
+              ),
+            ),
+          }
+        : {}),
     };
   } catch {
     return { ...EMPTY };

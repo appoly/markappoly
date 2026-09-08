@@ -1,7 +1,8 @@
 :root {
   --reading-bg: rgba(253, 253, 254, 0.97);
+  --modal-bg: #fdfdfe;
   --text: #1f2328;
-  --text-muted: rgba(60, 60, 67, 0.6);
+  --text-muted: rgba(60, 60, 67, 0.72);
   --hairline: rgba(0, 0, 0, 0.1);
   --panel: rgba(255, 255, 255, 0.55);
   --panel-strong: rgba(255, 255, 255, 0.85);
@@ -23,8 +24,9 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     --reading-bg: rgba(20, 22, 27, 0.96);
+    --modal-bg: #14161b;
     --text: #f5f5f7;
-    --text-muted: rgba(235, 235, 245, 0.6);
+    --text-muted: rgba(235, 235, 245, 0.68);
     --hairline: rgba(255, 255, 255, 0.12);
     --panel: rgba(255, 255, 255, 0.08);
     --panel-strong: rgba(255, 255, 255, 0.16);
@@ -42,8 +44,9 @@
 
 :root[data-theme="dark"] {
   --reading-bg: rgba(20, 22, 27, 0.96);
+  --modal-bg: #14161b;
   --text: #f5f5f7;
-  --text-muted: rgba(235, 235, 245, 0.6);
+  --text-muted: rgba(235, 235, 245, 0.68);
   --hairline: rgba(255, 255, 255, 0.12);
   --panel: rgba(255, 255, 255, 0.08);
   --panel-strong: rgba(255, 255, 255, 0.16);
@@ -71,8 +74,8 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-    sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
@@ -308,7 +311,11 @@ body {
 /* ---------- GitHub-style alerts / callouts ---------- */
 .markdown-body .markdown-alert {
   border-left: 0.25em solid var(--alert-color, var(--accent));
-  background: color-mix(in srgb, var(--alert-color, var(--accent)) 9%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--alert-color, var(--accent)) 9%,
+    transparent
+  );
   border-radius: 0 8px 8px 0;
   padding: 0.5em 1em;
   margin: 1em 0;
@@ -2015,3 +2022,271 @@ details.markdown-alert[open] > summary.markdown-alert-title::before {
   font-size: 12px;
   color: var(--text-muted);
 }
+
+/* Reading-first workspace: quiet chrome, explicit actions and resilient focus. */
+.labeled-btn {
+  gap: 6px;
+  width: auto;
+  padding-inline: 8px;
+}
+.toolbar .toolbar-group {
+  flex-shrink: 0;
+}
+.toolbar .menu-trigger {
+  white-space: nowrap;
+}
+.tab-strip {
+  display: flex;
+  border-bottom: 1px solid var(--hairline);
+}
+.tab-strip .tab-bar {
+  min-width: 0;
+  border: 0;
+}
+.tab {
+  padding: 0 6px 0 0;
+  flex: 0 0 auto;
+  max-width: 280px;
+}
+.tab-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.tab-close {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+}
+.tab-new {
+  flex-shrink: 0;
+}
+:where(button, input, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.format-context {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-inline: 4px;
+}
+.format-bar .menu-pop {
+  z-index: 30;
+}
+.sidebar {
+  position: relative;
+  overflow: hidden;
+  min-width: 190px;
+  max-width: 45vw;
+}
+.sidebar-sections {
+  height: 100%;
+  overflow-y: auto;
+  padding-bottom: 12px;
+}
+.sidebar-section > summary {
+  cursor: pointer;
+  display: list-item;
+  margin-left: 14px;
+  padding-left: 0;
+}
+.sidebar-section > .file-list,
+.sidebar-section > .outline-list {
+  max-height: 38vh;
+  overflow-y: auto;
+}
+.sidebar-title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-title .link-btn {
+  flex-shrink: 0;
+}
+.sidebar-resizer {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resizer:hover,
+.sidebar-resizer:focus-visible {
+  background: var(--accent);
+}
+.native-modal {
+  background: var(--modal-bg);
+  padding: 0;
+  color: var(--text);
+  margin: auto;
+}
+.native-modal:not([open]) {
+  display: none;
+}
+.native-modal::backdrop {
+  background: rgba(0, 0, 0, 0.3);
+}
+.native-modal .modal-body {
+  min-height: 0;
+}
+.set-hint {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.set-section h3 {
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  margin-block: 4px 12px;
+}
+.switch {
+  background: color-mix(in srgb, var(--text-muted) 55%, var(--reading-bg));
+}
+.advanced-settings summary {
+  cursor: pointer;
+  padding-block: 4px 12px;
+  font-size: 13px;
+}
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  padding: 16px;
+}
+.dialog-actions button,
+.welcome-buttons button,
+.notice button {
+  font: inherit;
+  padding: 7px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+button.primary-action {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+}
+.notice span {
+  flex: 1;
+  min-width: 180px;
+  overflow-wrap: anywhere;
+}
+.notice button {
+  padding: 4px 8px;
+}
+.welcome-actions {
+  padding-top: 20px;
+}
+.welcome-actions h1 {
+  font-size: 28px;
+  line-height: 1.25;
+  border: 0;
+}
+.welcome-actions > p {
+  color: var(--text-muted);
+}
+.welcome-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 24px 0 36px;
+  font-size: 14px;
+}
+.welcome-actions > h2 {
+  font-size: 16px;
+  border: 0;
+  margin-top: 32px;
+}
+.welcome-actions > ul {
+  list-style: none;
+  padding: 0;
+}
+.welcome-actions > ul button {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 0;
+  font: inherit;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.welcome-actions > ul button span {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.welcome-actions > details {
+  margin-top: 32px;
+}
+.welcome-actions summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.status-bar {
+  gap: 16px;
+}
+.status-bar > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 800px) {
+  .toolbar {
+    gap: 8px;
+    padding-right: 8px;
+  }
+  .toolbar-group {
+    gap: 4px;
+  }
+  .segmented button {
+    padding-inline: 9px;
+  }
+  .labeled-btn span {
+    display: none;
+  }
+  .set-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+@media print {
+  .tab-strip,
+  .notice,
+  .native-modal {
+    display: none !important;
+  }
+}
+
+.native-modal .icon-btn { border: 1px solid transparent; background: transparent; color: var(--text); cursor: pointer; }
+.native-modal .icon-btn:hover { background: var(--code-bg); }

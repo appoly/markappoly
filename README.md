@@ -42,7 +42,9 @@ After the first launch the app keeps itself up to date: when a new version ships
 - Syntax-highlighted code, **KaTeX math**, **Mermaid diagrams**, and GitHub-style alerts (`> [!NOTE]`)
 - Outline sidebar (with scroll spy) and folder tree browser, find-in-document (⌘F), and search — or search **and replace** — across a whole folder
 - Open Recent, word count and reading time, live reload when the file changes on disk
-- Session restore: tabs, folder, and view mode come back when you relaunch
+- Session restore: tabs, folder, and each document’s view mode come back when you relaunch
+- Cursor, undo history, and reading position stay with each tab while you work
+- A resizable sidebar with collapsible outline, bookmarks, and backlinks, plus a welcome screen with recent files
 - Adjustable reading width, font, and line spacing, plus your own custom CSS, and an option to block remote images
 - YAML frontmatter chrome (title, tags, date) above the preview
 - Relative Markdown links open sibling notes as tabs
@@ -67,14 +69,16 @@ Point Markappoly at a folder of notes (an Obsidian vault works as-is) and it beh
 - More preview syntax: `==highlights==`, `%%comments%%` that stay hidden, foldable callouts (`> [!note]-`), and Obsidian's extra callout types (info, question, danger, and friends)
 
 **Editing**
-- Toggle to a CodeMirror source editor with a formatting toolbar, or a **split view** (⌘⇧E) with editor and preview side by side, scrolling together
+- Toggle to a CodeMirror source editor with grouped Heading and Insert menus and contextual table tools, or a **split view** (⌘⇧E) with editor and preview side by side, scrolling together
 - **Focus mode** and **typewriter scrolling** for distraction-free writing, with editor spellcheck
 - Table tools to insert, extend, and align Markdown tables
 - Paste or drag an image to attach it next to the document; paste rich text and it converts to Markdown
 - Tick a checkbox in the preview and it writes the change back to the source
 - Optional **autosave**, and **File History**: a snapshot of every file is kept before each save (and before folder-wide replaces), diffable and restorable from the File menu
 
-Everything's tunable from **Settings** (⌘,).
+Save status and failures are visible, closing offers **Save / Don’t Save / Cancel**, and reloading asks before discarding edits. If a file changes externally, saving asks before replacing the disk version; **Save a copy** offers another way to keep your work.
+
+Everything’s tunable from **Settings** (⌘,), with reading preferences first. Occasional actions such as Graph, Present, File History, Reload, and zoom live in the **More** menu.
 
 **Export:** Text, HTML, JSON (AST), **Word (.docx)**, and PDF, plus **Copy as HTML** for pasting rich text elsewhere. With [Pandoc](https://pandoc.org) installed, also RTF, EPUB, LaTeX, and Pandoc-rendered Word and PDF.
 

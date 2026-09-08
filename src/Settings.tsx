@@ -1,25 +1,46 @@
-import { useEffect, type ReactNode } from "react";
+import { createContext, useContext, useId, type ReactNode } from "react";
+import { Modal } from "./Modal";
 import type { usePreferences } from "./prefs";
 
 type Prefs = ReturnType<typeof usePreferences>;
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+const RowLabel = createContext("");
+
+function Row({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  const id = useId();
   return (
-    <label className="set-row">
-      <span className="set-label">
-        {label}
-        {hint && <span className="set-hint">{hint}</span>}
-      </span>
-      {children}
-    </label>
+    <RowLabel.Provider value={id}>
+      <div className="set-row">
+        <span className="set-label" id={id}>
+          {label}
+          {hint && <span className="set-hint">{hint}</span>}
+        </span>
+        {children}
+      </div>
+    </RowLabel.Provider>
   );
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <button
       type="button"
       className={`switch${checked ? " on" : ""}`}
+      aria-labelledby={useContext(RowLabel)}
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
@@ -39,12 +60,38 @@ function Choice<T extends string>({
   options: [T, string][];
 }) {
   return (
-    <div className="seg-choice" role="radiogroup">
+    <div
+      className="seg-choice"
+      role="radiogroup"
+      aria-labelledby={useContext(RowLabel)}
+      onKeyDown={(e) => {
+        const buttons = Array.from(
+          e.currentTarget.querySelectorAll<HTMLButtonElement>("button"),
+        );
+        const index = buttons.indexOf(e.target as HTMLButtonElement);
+        const next =
+          e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? buttons.length - 1
+              : ["ArrowRight", "ArrowDown"].includes(e.key)
+                ? (index + 1) % buttons.length
+                : ["ArrowLeft", "ArrowUp"].includes(e.key)
+                  ? (index - 1 + buttons.length) % buttons.length
+                  : -1;
+        if (next >= 0) {
+          e.preventDefault();
+          buttons[next].focus();
+          onChange(options[next][0]);
+        }
+      }}
+    >
       {options.map(([v, label]) => (
         <button
           key={v}
           type="button"
           role="radio"
+          tabIndex={value === v ? 0 : -1}
           aria-checked={value === v}
           className={value === v ? "active" : ""}
           onClick={() => onChange(v)}
@@ -56,138 +103,152 @@ function Choice<T extends string>({
   );
 }
 
-export function Settings({ prefs, onClose }: { prefs: Prefs; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
+export function Settings({
+  prefs,
+  onClose,
+}: {
+  prefs: Prefs;
+  onClose: () => void;
+}) {
   return (
-    <div
-      className="modal-overlay"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal-card" role="dialog" aria-label="Settings">
-        <header className="modal-head">
-          <h2>Settings</h2>
-          <button className="icon-btn" onClick={onClose} title="Close (Esc)" aria-label="Close">
-            ✕
-          </button>
-        </header>
+    <Modal title="Settings" onClose={onClose}>
+      <header className="modal-head">
+        <h2>Settings</h2>
+        <button
+          className="icon-btn"
+          onClick={onClose}
+          title="Close (Esc)"
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </header>
 
-        <div className="modal-body">
-          <section className="set-section">
-            <h3>Editor</h3>
-            <Row label="Focus mode" hint="Dim all but the current paragraph">
-              <Toggle checked={prefs.focusMode} onChange={prefs.setFocusMode} />
-            </Row>
-            <Row label="Typewriter scrolling" hint="Keep the active line centred">
-              <Toggle checked={prefs.typewriter} onChange={prefs.setTypewriter} />
-            </Row>
-            <Row label="Spellcheck">
-              <Toggle checked={prefs.spellcheck} onChange={prefs.setSpellcheck} />
-            </Row>
-            <Row label="Paste HTML as Markdown" hint="Convert pasted rich text">
-              <Toggle checked={prefs.pasteAsMarkdown} onChange={prefs.setPasteAsMarkdown} />
-            </Row>
-            <Row label="Block remote images" hint="Don't load images over the network">
-              <Toggle checked={prefs.blockRemoteImages} onChange={prefs.setBlockRemoteImages} />
-            </Row>
-            <Row label="Autosave" hint="Save changes a moment after you stop typing">
-              <Toggle checked={prefs.autosave} onChange={prefs.setAutosave} />
-            </Row>
-          </section>
-
-          <section className="set-section">
-            <h3>Vault</h3>
-            <Row label="Templates folder" hint="Notes here appear in New Note…">
-              <input
-                className="set-text"
-                value={prefs.templatesFolder}
-                spellCheck={false}
-                placeholder="Templates"
-                onChange={(e) => prefs.setTemplatesFolder(e.target.value)}
-              />
-            </Row>
-            <Row label="Daily notes folder" hint="Blank keeps daily notes in the folder root">
-              <input
-                className="set-text"
-                value={prefs.dailyFolder}
-                spellCheck={false}
-                placeholder="(root)"
-                onChange={(e) => prefs.setDailyFolder(e.target.value)}
-              />
-            </Row>
-          </section>
-
-          <section className="set-section">
-            <h3>Reading</h3>
-            <Row label="Theme">
-              <Choice
-                value={prefs.theme}
-                onChange={prefs.setTheme}
-                options={[
-                  ["system", "System"],
-                  ["light", "Light"],
-                  ["dark", "Dark"],
-                ]}
-              />
-            </Row>
-            <Row label="Width">
-              <Choice
-                value={prefs.readingWidth}
-                onChange={prefs.setReadingWidth}
-                options={[
-                  ["narrow", "Narrow"],
-                  ["normal", "Normal"],
-                  ["wide", "Wide"],
-                ]}
-              />
-            </Row>
-            <Row label="Font">
-              <Choice
-                value={prefs.readingFont}
-                onChange={prefs.setReadingFont}
-                options={[
-                  ["sans", "Sans"],
-                  ["serif", "Serif"],
-                  ["mono", "Mono"],
-                ]}
-              />
-            </Row>
-            <Row label="Line spacing">
-              <Choice
-                value={prefs.lineSpacing}
-                onChange={prefs.setLineSpacing}
-                options={[
-                  ["tight", "Tight"],
-                  ["normal", "Normal"],
-                  ["relaxed", "Relaxed"],
-                ]}
-              />
-            </Row>
-          </section>
-
-          <section className="set-section">
-            <h3>Custom CSS</h3>
-            <p className="set-note">
-              Styles the preview. Target <code>.markdown-body</code>.
-            </p>
-            <textarea
-              className="set-css"
-              value={prefs.customCss}
-              spellCheck={false}
-              placeholder=".markdown-body { font-size: 17px; }"
-              onChange={(e) => prefs.setCustomCss(e.target.value)}
+      <div className="modal-body">
+        <section className="set-section">
+          <h3>Reading</h3>
+          <Row label="Theme">
+            <Choice
+              value={prefs.theme}
+              onChange={prefs.setTheme}
+              options={[
+                ["system", "System"],
+                ["light", "Light"],
+                ["dark", "Dark"],
+              ]}
             />
-          </section>
-        </div>
+          </Row>
+          <Row label="Width">
+            <Choice
+              value={prefs.readingWidth}
+              onChange={prefs.setReadingWidth}
+              options={[
+                ["narrow", "Narrow"],
+                ["normal", "Normal"],
+                ["wide", "Wide"],
+              ]}
+            />
+          </Row>
+          <Row label="Font">
+            <Choice
+              value={prefs.readingFont}
+              onChange={prefs.setReadingFont}
+              options={[
+                ["sans", "Sans"],
+                ["serif", "Serif"],
+                ["mono", "Mono"],
+              ]}
+            />
+          </Row>
+          <Row label="Line spacing">
+            <Choice
+              value={prefs.lineSpacing}
+              onChange={prefs.setLineSpacing}
+              options={[
+                ["tight", "Tight"],
+                ["normal", "Normal"],
+                ["relaxed", "Relaxed"],
+              ]}
+            />
+          </Row>
+        </section>
+
+        <section className="set-section">
+          <h3>Editor</h3>
+          <Row label="Focus mode" hint="Dim all but the current paragraph">
+            <Toggle checked={prefs.focusMode} onChange={prefs.setFocusMode} />
+          </Row>
+          <Row label="Typewriter scrolling" hint="Keep the active line centred">
+            <Toggle checked={prefs.typewriter} onChange={prefs.setTypewriter} />
+          </Row>
+          <Row label="Spellcheck">
+            <Toggle checked={prefs.spellcheck} onChange={prefs.setSpellcheck} />
+          </Row>
+          <Row label="Paste HTML as Markdown" hint="Convert pasted rich text">
+            <Toggle
+              checked={prefs.pasteAsMarkdown}
+              onChange={prefs.setPasteAsMarkdown}
+            />
+          </Row>
+          <Row
+            label="Block remote images"
+            hint="Don't load images over the network"
+          >
+            <Toggle
+              checked={prefs.blockRemoteImages}
+              onChange={prefs.setBlockRemoteImages}
+            />
+          </Row>
+          <Row
+            label="Autosave"
+            hint="Save changes a moment after you stop typing"
+          >
+            <Toggle checked={prefs.autosave} onChange={prefs.setAutosave} />
+          </Row>
+        </section>
+
+        <section className="set-section">
+          <h3>Notes and templates</h3>
+          <Row label="Templates folder" hint="Notes here appear in New Note…">
+            <input
+              className="set-text"
+              aria-label="Templates folder"
+              value={prefs.templatesFolder}
+              spellCheck={false}
+              placeholder="Templates"
+              onChange={(e) => prefs.setTemplatesFolder(e.target.value)}
+            />
+          </Row>
+          <Row
+            label="Daily notes folder"
+            hint="Blank keeps daily notes in the folder root"
+          >
+            <input
+              className="set-text"
+              aria-label="Daily notes folder"
+              value={prefs.dailyFolder}
+              spellCheck={false}
+              placeholder="(root)"
+              onChange={(e) => prefs.setDailyFolder(e.target.value)}
+            />
+          </Row>
+        </section>
+
+        <details className="set-section advanced-settings">
+          <summary>Advanced styling</summary>
+          <p className="set-note">
+            Styles the preview. Target <code>.markdown-body</code>.
+          </p>
+          <textarea
+            className="set-css"
+            aria-label="Custom CSS"
+            value={prefs.customCss}
+            spellCheck={false}
+            placeholder=".markdown-body { font-size: 17px; }"
+            onChange={(e) => prefs.setCustomCss(e.target.value)}
+          />
+        </details>
       </div>
-    </div>
+    </Modal>
   );
 }

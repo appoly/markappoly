@@ -1,4 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -27,15 +35,9 @@ import {
   SidebarIcon,
   OpenIcon,
   SaveIcon,
-  ReloadIcon,
-  PresentIcon,
-  MinusIcon,
-  PlusIcon,
   ExportIcon,
   MoreIcon,
   ChevronIcon,
-  StarIcon,
-  GraphIcon,
 } from "./icons";
 import { FrontmatterBar } from "./FrontmatterBar";
 import { useLiveReload } from "./useLiveReload";
@@ -44,16 +46,29 @@ import { loadSession, saveSession } from "./session";
 import { createOpenQueue } from "./openQueue";
 import { basename, dirOf, MD_EXTENSIONS } from "./paths";
 import { makeDoc, type Doc, type ExportKind, type Mode } from "./types";
+import { useSaveDecision } from "./Modal";
+import { createDocumentSaver } from "./saveDocument";
+import type { EditorSession } from "./editorSession";
 import { WELCOME } from "./welcome";
 import "./App.css";
 
 // The editor (CodeMirror), diff, graph, and history views load on demand so a
 // plain "open a file and read it" launch parses none of them.
-const EditorPane = lazy(() => import("./EditorPane").then((m) => ({ default: m.EditorPane })));
-const SplitView = lazy(() => import("./EditorPane").then((m) => ({ default: m.SplitView })));
-const DiffView = lazy(() => import("./DiffView").then((m) => ({ default: m.DiffView })));
-const GraphView = lazy(() => import("./GraphView").then((m) => ({ default: m.GraphView })));
-const HistoryView = lazy(() => import("./HistoryView").then((m) => ({ default: m.HistoryView })));
+const EditorPane = lazy(() =>
+  import("./EditorPane").then((m) => ({ default: m.EditorPane })),
+);
+const SplitView = lazy(() =>
+  import("./EditorPane").then((m) => ({ default: m.SplitView })),
+);
+const DiffView = lazy(() =>
+  import("./DiffView").then((m) => ({ default: m.DiffView })),
+);
+const GraphView = lazy(() =>
+  import("./GraphView").then((m) => ({ default: m.GraphView })),
+);
+const HistoryView = lazy(() =>
+  import("./HistoryView").then((m) => ({ default: m.HistoryView })),
+);
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const PANDOC_FORMATS = [
@@ -65,7 +80,11 @@ const PANDOC_FORMATS = [
 ];
 
 function docName(d: Doc): string {
-  return d.path ? basename(d.path) : "Untitled";
+  return d.path
+    ? basename(d.path)
+    : d.source === WELCOME
+      ? "Welcome"
+      : "Untitled";
 }
 
 function App() {
@@ -76,10 +95,26 @@ function App() {
 
   const [docs, setDocs] = useState<Doc[]>(() => [first.current!]);
   const [activeId, setActiveId] = useState<string>(() => first.current!.id);
-  const [mode, setMode] = useState<Mode>(session.current.mode);
-  const [compare, setCompare] = useState<{ aId: string; bId: string } | null>(null);
+  const [mode, setModeState] = useState<Mode>(session.current.mode);
+  const documentModes = useRef(
+    new Map<string, Mode>([[first.current!.id, session.current.mode]]),
+  );
+  const editorSessions = useRef(new Map<string, EditorSession>());
+  const focusEditor = useRef(false);
+  const previewPositions = useRef(new Map<string, number>());
+  const decision = useSaveDecision();
+  const decisionRef = useRef(decision.decide);
+  decisionRef.current = decision.decide;
+  const [recents, setRecents] = useState<string[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [inTable, setInTable] = useState(false);
+  const [compare, setCompare] = useState<{ aId: string; bId: string } | null>(
+    null,
+  );
   const [files, setFiles] = useState<FileEntry[]>([]);
-  const [folderPath, setFolderPath] = useState<string | null>(session.current.folderPath);
+  const [folderPath, setFolderPath] = useState<string | null>(
+    session.current.folderPath,
+  );
   const [findOpen, setFindOpen] = useState(false);
   const [presenting, setPresenting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -98,6 +133,23 @@ function App() {
   activeIdRef.current = activeId;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+
+  const setMode = useCallback((next: Mode | ((current: Mode) => Mode)) => {
+    const value = typeof next === "function" ? next(modeRef.current) : next;
+    focusEditor.current = value !== "preview";
+    documentModes.current.set(activeIdRef.current, value);
+    modeRef.current = value;
+    setModeState(value);
+  }, []);
+  const activateDoc = useCallback((id: string) => {
+    activeIdRef.current = id;
+    setActiveId(id);
+    focusEditor.current = false;
+    const next = documentModes.current.get(id) ?? modeRef.current;
+    documentModes.current.set(id, next);
+    modeRef.current = next;
+    setModeState(next);
+  }, []);
 
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const contentRef = useRef<HTMLElement | null>(null);
@@ -134,7 +186,10 @@ function App() {
   );
 
   const headings = useMemo(() => extractHeadings(source), [source]);
-  const wordCount = useMemo(() => (source.trim().match(/\S+/g) || []).length, [source]);
+  const wordCount = useMemo(
+    () => (source === WELCOME ? 0 : (source.trim().match(/\S+/g) || []).length),
+    [source],
+  );
   const readMin = Math.max(1, Math.ceil(wordCount / 200));
 
   const activeHeadingSlug = useScrollSpy(
@@ -144,109 +199,149 @@ function App() {
   );
 
   const getActive = useCallback(
-    () => docsRef.current.find((d) => d.id === activeIdRef.current) ?? docsRef.current[0],
+    () =>
+      docsRef.current.find((d) => d.id === activeIdRef.current) ??
+      docsRef.current[0],
     [],
   );
   const patchDocById = useCallback((id: string, patch: Partial<Doc>) => {
-    setDocs((ds) => ds.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+    const next = docsRef.current.map((d) =>
+      d.id === id ? { ...d, ...patch } : d,
+    );
+    docsRef.current = next;
+    setDocs(next);
   }, []);
 
   useLiveReload(docs, patchDocById, docsRef);
 
   // ----- Tabs -----
-  const selectTab = useCallback((id: string) => {
-    setActiveId(id);
-    setCompare(null);
-  }, []);
+  const selectTab = useCallback(
+    (id: string) => {
+      activateDoc(id);
+      setCompare(null);
+    },
+    [activateDoc],
+  );
 
   const newDoc = useCallback(() => {
     const doc = makeDoc({ source: "" });
-    setDocs((ds) => [...ds, doc]);
-    setActiveId(doc.id);
+    docsRef.current = [...docsRef.current, doc];
+    setDocs(docsRef.current);
+    activateDoc(doc.id);
     setCompare(null);
     setMode("edit");
-  }, []);
-
-  const closeTab = useCallback(async (id: string) => {
-    const cur = docsRef.current;
-    const doc = cur.find((d) => d.id === id);
-    if (!doc) return;
-    if (doc.dirty) {
-      const discard = await ask(`Discard unsaved changes to ${docName(doc)}?`, {
-        title: "Unsaved changes",
-        kind: "warning",
-        okLabel: "Discard",
-        cancelLabel: "Cancel",
-      });
-      if (!discard) return;
-    }
-    const idx = cur.findIndex((d) => d.id === id);
-    const next = cur.filter((d) => d.id !== id);
-    if (next.length === 0) {
-      const fresh = makeDoc({ source: "" });
-      setDocs([fresh]);
-      setActiveId(fresh.id);
-      setCompare(null);
-      return;
-    }
-    setDocs(next);
-    if (activeIdRef.current === id) {
-      setActiveId(next[Math.min(idx, next.length - 1)].id);
-    }
-    setCompare((c) => (c && (c.aId === id || c.bId === id) ? null : c));
-  }, []);
+  }, [activateDoc, setMode]);
 
   // ----- Open / save -----
-  const openPath = useCallback(async (path: string) => {
-    const existing = docsRef.current.find((d) => d.path === path);
-    if (existing) {
-      setActiveId(existing.id);
-      setCompare(null);
-      return;
-    }
-    try {
-      const text = await invoke<string>("read_file", { path });
-      let mtime: number | null = null;
-      try {
-        mtime = await invoke<number>("file_mtime", { path });
-      } catch {
-        /* ignore */
+  const openPath = useCallback(
+    async (path: string) => {
+      const existing = docsRef.current.find((d) => d.path === path);
+      if (existing) {
+        activateDoc(existing.id);
+        setCompare(null);
+        return true;
       }
-      const doc = makeDoc({ path, source: text, dirty: false, mtime });
-      setDocs((ds) => {
+      try {
+        const text = await invoke<string>("read_file", { path });
+        let mtime: number | null = null;
+        try {
+          mtime = await invoke<number>("file_mtime", { path });
+        } catch {
+          /* ignore */
+        }
+        const doc = makeDoc({ path, source: text, dirty: false, mtime });
+        const current = docsRef.current;
         const onlyWelcome =
-          ds.length === 1 && ds[0].path === null && !ds[0].dirty && ds[0].source === WELCOME;
-        return onlyWelcome ? [doc] : [...ds, doc];
-      });
-      setActiveId(doc.id);
-      setCompare(null);
-      setMode("preview");
-      invoke("push_recent", { path }).catch(() => {});
-    } catch (e) {
-      console.error("open failed", e);
-    }
-  }, []);
+          current.length === 1 &&
+          current[0].path === null &&
+          !current[0].dirty &&
+          current[0].source === WELCOME;
+        docsRef.current = onlyWelcome ? [doc] : [...current, doc];
+        setDocs(docsRef.current);
+        activateDoc(doc.id);
+        setCompare(null);
+        invoke("push_recent", { path }).catch(() => {});
+        return true;
+      } catch (e) {
+        setNotice(`Could not open ${basename(path)}. ${String(e)}`);
+        return false;
+      }
+    },
+    [activateDoc],
+  );
 
   // Files the OS asks us to open (Finder, "Open With", the command line) wait
   // behind the session restore so the requested file ends up on top of the
   // restored tabs and active, instead of buried by the restore's own selection.
-  const [openQueue] = useState(() => createOpenQueue(openPath));
+  const [openQueue] = useState(() =>
+    createOpenQueue(async (path) => {
+      await openPath(path);
+    }),
+  );
 
+  const [lineTarget, setLineTarget] = useState<{
+    path: string;
+    line: number;
+  } | null>(null);
   const openPathAtLine = useCallback(
     async (path: string, line: number) => {
-      await openPath(path);
-      setMode("edit");
-      setTimeout(() => {
-        const view = cmRef.current?.view;
-        if (!view) return;
-        const n = Math.min(Math.max(1, line), view.state.doc.lines);
-        const pos = view.state.doc.line(n).from;
-        view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
-        view.focus();
-      }, 140);
+      if (await openPath(path)) setLineTarget({ path, line });
     },
     [openPath],
   );
+
+  const lineTargetRef = useRef(lineTarget);
+  lineTargetRef.current = lineTarget;
+  const editorReady = useCallback(
+    (view: EditorView) => {
+      const target = lineTargetRef.current;
+      if (!target || target.path !== getActive().path) {
+        if (focusEditor.current && !document.querySelector("dialog[open]")) {
+          view.focus();
+          focusEditor.current = false;
+        }
+        return;
+      }
+      const n = Math.min(Math.max(1, target.line), view.state.doc.lines);
+      view.dispatch({
+        selection: { anchor: view.state.doc.line(n).from },
+        scrollIntoView: true,
+      });
+      view.focus();
+      setLineTarget(null);
+    },
+    [getActive],
+  );
+  useEffect(() => {
+    if (mode !== "preview" || !contentEl) return;
+    contentEl.scrollTop = previewPositions.current.get(active.id) ?? 0;
+    const remember = () =>
+      previewPositions.current.set(active.id, contentEl.scrollTop);
+    contentEl.addEventListener("scroll", remember);
+    return () => contentEl.removeEventListener("scroll", remember);
+  }, [active.id, mode, contentEl]);
+  useEffect(() => {
+    if (!lineTarget || lineTarget.path !== filePath) return;
+    if (mode !== "preview") {
+      if (cmRef.current?.view) editorReady(cmRef.current.view);
+      return;
+    }
+    const blocks = Array.from(
+      contentEl?.querySelectorAll<HTMLElement>("[data-source-line]") ?? [],
+    );
+    const el = blocks
+      .filter((block) => Number(block.dataset.sourceLine) <= lineTarget.line)
+      .slice(-1)[0];
+    if (el) {
+      let parent = el.parentElement;
+      while (parent && parent !== contentEl) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+        parent = parent.parentElement;
+      }
+      el.scrollIntoView({ block: "center" });
+    } else if (contentEl) contentEl.scrollTop = 0;
+    setLineTarget(null);
+  }, [lineTarget, filePath, mode, headings, contentEl, editorReady]);
 
   const openFile = useCallback(async () => {
     const selected = await open({
@@ -261,7 +356,7 @@ function App() {
     try {
       setFiles(await invoke<FileEntry[]>("list_markdown_dir", { path: dir }));
     } catch (e) {
-      console.error(e);
+      setNotice(`Could not open this folder. ${String(e)}`);
       setFiles([]);
     }
   }, []);
@@ -274,79 +369,149 @@ function App() {
 
   const reloadFile = useCallback(async () => {
     const doc = getActive();
-    if (!doc.path) return;
-    const text = await invoke<string>("read_file", { path: doc.path });
-    let mtime: number | null = null;
+    if (!doc.path || doc.saveStatus === "saving") return;
+    if (
+      doc.dirty &&
+      !(await ask(`Reload ${docName(doc)} and discard your unsaved changes?`, {
+        title: "Reload from disk",
+        kind: "warning",
+        okLabel: "Discard and Reload",
+        cancelLabel: "Cancel",
+      }))
+    )
+      return;
     try {
-      mtime = await invoke<number>("file_mtime", { path: doc.path });
-    } catch {
-      /* ignore */
+      const text = await invoke<string>("read_file", { path: doc.path });
+      const mtime = await invoke<number>("file_mtime", {
+        path: doc.path,
+      }).catch(() => null);
+      editorSessions.current.delete(doc.id);
+      patchDocById(doc.id, {
+        source: text,
+        dirty: false,
+        mtime,
+        saveStatus: "idle",
+        saveError: undefined,
+      });
+    } catch (error) {
+      setNotice(`Could not reload ${docName(doc)}. ${String(error)}`);
     }
-    patchDocById(doc.id, { source: text, dirty: false, mtime });
   }, [getActive, patchDocById]);
 
-  // The single write path for documents that already live on disk. Manual
-  // saves force a history snapshot and surface errors; autosaves stay quiet,
-  // never clobber external edits, and retry on the next pause.
-  const saveDocById = useCallback(
-    async (id: string, opts?: { manual?: boolean }) => {
-      const doc = docsRef.current.find((d) => d.id === id);
-      if (!doc?.path || !doc.dirty) return;
-      const { path, source, mtime: knownMtime } = doc;
-      if (!opts?.manual) {
-        // The file changed on disk while this tab was dirty (live reload can't
-        // touch dirty tabs). Autosave must not overwrite that silently.
-        const diskMtime = await invoke<number>("file_mtime", { path }).catch(() => null);
-        if (diskMtime !== null && knownMtime !== null && diskMtime > knownMtime) return;
-      }
-      await invoke("snapshot_file", { path, force: !!opts?.manual }).catch(() => {});
-      try {
-        await invoke("write_file", { path, contents: source });
-      } catch (e) {
-        if (opts?.manual) throw e;
-        return; // volume gone / permissions — keep the doc dirty for a manual save
-      }
-      let mtime: number | null = null;
-      try {
-        mtime = await invoke<number>("file_mtime", { path });
-      } catch {
-        /* ignore */
-      }
-      // Keystrokes typed while the write was in flight must stay dirty.
-      const cur = docsRef.current.find((d) => d.id === id);
-      if (cur && cur.source === source) patchDocById(id, { dirty: false, mtime });
-      else patchDocById(id, { mtime });
-      // Autosave skips the vault re-index; the file watcher already refreshes it.
-      if (opts?.manual) refreshVault();
-    },
-    [patchDocById, refreshVault],
+  const [saveExisting] = useState(() =>
+    createDocumentSaver(
+      {
+        readMtime: (path) => invoke<number>("file_mtime", { path }),
+        snapshot: (path, force) => invoke("snapshot_file", { path, force }),
+        write: (path, source) =>
+          invoke("write_file", { path, contents: source }),
+        overwrite: (path) =>
+          ask(
+            `${basename(path)} changed on disk. Replace the disk version with your changes? A copy of the disk version will be kept in File History.`,
+            {
+              title: "File changed externally",
+              kind: "warning",
+              okLabel: "Replace Disk Version",
+              cancelLabel: "Cancel",
+            },
+          ),
+      },
+      (id) => docsRef.current.find((d) => d.id === id),
+      patchDocById,
+    ),
   );
 
-  const saveFile = useCallback(async () => {
-    const doc = getActive();
-    if (!doc.path) {
-      const chosen = await save({ filters: [{ name: "Markdown", extensions: ["md"] }] });
-      if (!chosen) return;
-      await invoke("write_file", { path: chosen, contents: doc.source });
-      let mtime: number | null = null;
+  const saveDocById = useCallback(
+    async (id: string, opts?: { manual?: boolean }) => {
+      const result = await saveExisting(id, opts?.manual);
+      if (result && opts?.manual) refreshVault();
+      return result;
+    },
+    [saveExisting, refreshVault],
+  );
+
+  const newSaves = useRef(new Set<string>());
+  const saveDocument = useCallback(
+    async (id: string, saveAs = false): Promise<boolean> => {
+      const doc = docsRef.current.find((d) => d.id === id);
+      if (
+        !doc ||
+        newSaves.current.has(id) ||
+        (saveAs && doc.saveStatus === "saving")
+      )
+        return false;
+      if (doc.path && !saveAs) return saveDocById(id, { manual: true });
+      newSaves.current.add(id);
       try {
-        mtime = await invoke<number>("file_mtime", { path: chosen });
-      } catch {
-        /* ignore */
+        const chosen = await save({
+          filters: [{ name: "Markdown", extensions: ["md"] }],
+        });
+        if (!chosen) return false;
+        const current = docsRef.current.find((d) => d.id === id);
+        if (!current) return false;
+        const source = current.source;
+        patchDocById(id, { saveStatus: "saving", saveError: undefined });
+        await invoke("snapshot_file", { path: chosen, force: true });
+        await invoke("write_file", { path: chosen, contents: source });
+        const mtime = await invoke<number>("file_mtime", {
+          path: chosen,
+        }).catch(() => null);
+        const unchanged =
+          docsRef.current.find((d) => d.id === id)?.source === source;
+        patchDocById(id, {
+          path: chosen,
+          dirty: !unchanged,
+          mtime,
+          saveStatus: "idle",
+        });
+        invoke("push_recent", { path: chosen }).catch(() => {});
+        refreshVault();
+        return unchanged;
+      } catch (error) {
+        patchDocById(id, { saveStatus: "error", saveError: String(error) });
+        return false;
+      } finally {
+        newSaves.current.delete(id);
       }
-      patchDocById(doc.id, { path: chosen, dirty: false, mtime });
-      invoke("push_recent", { path: chosen }).catch(() => {});
-      refreshVault();
-      return;
-    }
-    try {
-      await saveDocById(doc.id, { manual: true });
-    } catch (e) {
-      await message(`The file could not be saved.\n\n${e}`, { title: "Save", kind: "error" });
-      return;
-    }
-    invoke("push_recent", { path: doc.path }).catch(() => {});
-  }, [getActive, saveDocById, patchDocById, refreshVault]);
+    },
+    [patchDocById, refreshVault, saveDocById],
+  );
+  const saveFile = useCallback(
+    () => saveDocument(activeIdRef.current),
+    [saveDocument],
+  );
+
+  const closeTab = useCallback(
+    async (id: string) => {
+      const doc = docsRef.current.find((d) => d.id === id);
+      if (!doc) return;
+      if (doc.saveStatus === "saving") return;
+      if (doc.dirty) {
+        const answer = await decisionRef.current(docName(doc));
+        if (
+          answer === "cancel" ||
+          (answer === "save" && !(await saveDocument(id)))
+        )
+          return;
+      }
+      const current = docsRef.current;
+      const index = current.findIndex((d) => d.id === id);
+      let next = current.filter((d) => d.id !== id);
+      if (!next.length) {
+        next = [makeDoc({ source: WELCOME })];
+        documentModes.current.set(next[0].id, "preview");
+      }
+      docsRef.current = next;
+      setDocs(next);
+      if (activeIdRef.current === id)
+        activateDoc(next[Math.min(index, next.length - 1)].id);
+      documentModes.current.delete(id);
+      editorSessions.current.delete(id);
+      previewPositions.current.delete(id);
+      setCompare((c) => (c && (c.aId === id || c.bId === id) ? null : c));
+    },
+    [activateDoc, saveDocument],
+  );
 
   useEffect(() => {
     if (!prefs.autosave) return;
@@ -362,7 +527,9 @@ function App() {
   useEffect(() => {
     if (!prefs.autosave) return;
     const onBlur = () => {
-      docsRef.current.filter((d) => d.dirty && d.path).forEach((d) => saveDocById(d.id));
+      docsRef.current
+        .filter((d) => d.dirty && d.path)
+        .forEach((d) => saveDocById(d.id));
     };
     window.addEventListener("blur", onBlur);
     return () => window.removeEventListener("blur", onBlur);
@@ -397,7 +564,11 @@ function App() {
       if (kind === "txt") contents = src;
       else {
         const ex = await import("./export");
-        if (kind === "html") contents = ex.htmlDocument(basename(doc.path), ex.markdownToHtml(src));
+        if (kind === "html")
+          contents = ex.htmlDocument(
+            basename(doc.path),
+            ex.markdownToHtml(src),
+          );
         else contents = JSON.stringify(ex.markdownToAst(src), null, 2);
       }
 
@@ -473,10 +644,13 @@ function App() {
     async (view: EditorView, payload: AttachPayload) => {
       const doc = getActive();
       if (!doc.path) {
-        await message("Save the document first so images can be stored alongside it.", {
-          title: "Attach image",
-          kind: "warning",
-        });
+        await message(
+          "Save the document first so images can be stored alongside it.",
+          {
+            title: "Attach image",
+            kind: "warning",
+          },
+        );
         return;
       }
       try {
@@ -493,7 +667,10 @@ function App() {
               });
         const { from, to } = view.state.selection.main;
         const snippet = `![](${rel})`;
-        view.dispatch({ changes: { from, to, insert: snippet }, selection: { anchor: from + 2 } });
+        view.dispatch({
+          changes: { from, to, insert: snippet },
+          selection: { anchor: from + 2 },
+        });
         view.focus();
       } catch (e) {
         console.error("attach image failed", e);
@@ -518,7 +695,12 @@ function App() {
       spellcheck: prefs.spellcheck,
       pasteAsMarkdown: prefs.pasteAsMarkdown,
     }),
-    [prefs.focusMode, prefs.typewriter, prefs.spellcheck, prefs.pasteAsMarkdown],
+    [
+      prefs.focusMode,
+      prefs.typewriter,
+      prefs.spellcheck,
+      prefs.pasteAsMarkdown,
+    ],
   );
 
   const runOnEditor = useCallback((fn: (view: EditorView) => void) => {
@@ -551,7 +733,10 @@ function App() {
   );
 
   const createNote = useCallback(
-    async (name: string, templatePath: string | null): Promise<string | null> => {
+    async (
+      name: string,
+      templatePath: string | null,
+    ): Promise<string | null> => {
       if (!folderPath) return "Open a folder first.";
       const fileName = noteFileName(name);
       if (!fileName) return "Give the note a name.";
@@ -595,17 +780,25 @@ function App() {
     const sep = folderPath.includes("\\") ? "\\" : "/";
     const sub = prefs.dailyFolder.trim().replace(/^[\\/]+|[\\/]+$/g, "");
     const today = formatDate(new Date());
-    const path = (sub ? folderPath + sep + sub : folderPath) + sep + today + ".md";
-    const exists = await invoke<boolean>("path_exists", { path }).catch(() => false);
+    const path =
+      (sub ? folderPath + sep + sub : folderPath) + sep + today + ".md";
+    const exists = await invoke<boolean>("path_exists", { path }).catch(
+      () => false,
+    );
     if (!exists) {
       // A template whose file is named "Daily" seeds new daily notes.
       let contents = `# ${today}\n\n`;
       const tpl = filesRef.current.find(
-        (f) => isInFolder(f.name, prefs.templatesFolder) && /^daily\./i.test(basename(f.path)),
+        (f) =>
+          isInFolder(f.name, prefs.templatesFolder) &&
+          /^daily\./i.test(basename(f.path)),
       );
       if (tpl) {
         try {
-          contents = fillTemplate(await invoke<string>("read_file", { path: tpl.path }), today);
+          contents = fillTemplate(
+            await invoke<string>("read_file", { path: tpl.path }),
+            today,
+          );
         } catch {
           /* fall back to the date heading */
         }
@@ -623,7 +816,14 @@ function App() {
       refreshVault();
     }
     await openPath(path);
-  }, [folderPath, prefs.dailyFolder, prefs.templatesFolder, loadFolder, refreshVault, openPath]);
+  }, [
+    folderPath,
+    prefs.dailyFolder,
+    prefs.templatesFolder,
+    loadFolder,
+    refreshVault,
+    openPath,
+  ]);
 
   const replaceInFolder = useCallback(
     async (query: string, replacement: string) => {
@@ -637,14 +837,20 @@ function App() {
       }
       const ok = await ask(
         `Replace every occurrence of “${query}” with “${replacement}” across ${basename(folderPath)}?\n\nMatching is case-sensitive. A snapshot of each changed file is kept in File History.`,
-        { title: "Replace in folder", kind: "warning", okLabel: "Replace", cancelLabel: "Cancel" },
+        {
+          title: "Replace in folder",
+          kind: "warning",
+          okLabel: "Replace",
+          cancelLabel: "Cancel",
+        },
       );
       if (!ok) return;
       try {
-        const res = await invoke<{ files: number; occurrences: number; failed: number }>(
-          "replace_in_dir",
-          { path: folderPath, query, replacement },
-        );
+        const res = await invoke<{
+          files: number;
+          occurrences: number;
+          failed: number;
+        }>("replace_in_dir", { path: folderPath, query, replacement });
         const summary =
           res.files === 0 && res.failed === 0
             ? "No occurrences found. The search box matches case-insensitively, but replace is case-sensitive."
@@ -653,10 +859,16 @@ function App() {
           res.failed > 0
             ? `${summary}\n\n${res.failed} file${res.failed === 1 ? "" : "s"} could not be written and ${res.failed === 1 ? "was" : "were"} left unchanged.`
             : summary,
-          { title: "Replace in folder", kind: res.failed > 0 ? "warning" : "info" },
+          {
+            title: "Replace in folder",
+            kind: res.failed > 0 ? "warning" : "info",
+          },
         );
       } catch (e) {
-        await message(`Replace failed.\n\n${e}`, { title: "Replace in folder", kind: "error" });
+        await message(`Replace failed.\n\n${e}`, {
+          title: "Replace in folder",
+          kind: "error",
+        });
       } finally {
         // Files may have changed even when the command errored part-way.
         refreshVault();
@@ -666,20 +878,23 @@ function App() {
     [folderPath, refreshVault],
   );
 
-  const wrapSelection = useCallback((before: string, after = before, placeholder = "") => {
-    const view = cmRef.current?.view;
-    if (!view) return;
-    const { from, to } = view.state.selection.main;
-    const selected = view.state.sliceDoc(from, to) || placeholder;
-    view.dispatch({
-      changes: { from, to, insert: before + selected + after },
-      selection: {
-        anchor: from + before.length,
-        head: from + before.length + selected.length,
-      },
-    });
-    view.focus();
-  }, []);
+  const wrapSelection = useCallback(
+    (before: string, after = before, placeholder = "") => {
+      const view = cmRef.current?.view;
+      if (!view) return;
+      const { from, to } = view.state.selection.main;
+      const selected = view.state.sliceDoc(from, to) || placeholder;
+      view.dispatch({
+        changes: { from, to, insert: before + selected + after },
+        selection: {
+          anchor: from + before.length,
+          head: from + before.length + selected.length,
+        },
+      });
+      view.focus();
+    },
+    [],
+  );
 
   const prefixLines = useCallback((prefix: string) => {
     const view = cmRef.current?.view;
@@ -730,7 +945,8 @@ function App() {
         if (i !== index) return full;
         return prefix + (c === " " ? "[x]" : "[ ]");
       });
-      if (updated !== doc.source) patchDocById(doc.id, { source: updated, dirty: true });
+      if (updated !== doc.source)
+        patchDocById(doc.id, { source: updated, dirty: true });
     },
     [getActive, patchDocById],
   );
@@ -742,15 +958,27 @@ function App() {
         if (view) {
           const n = Math.min(h.line + 1, view.state.doc.lines);
           const line = view.state.doc.line(n);
-          view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
+          view.dispatch({
+            selection: { anchor: line.from },
+            scrollIntoView: true,
+          });
           view.focus();
         }
       } else {
-        document.getElementById(h.slug)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        document
+          .getElementById(h.slug)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     },
     [mode],
   );
+
+  useEffect(() => {
+    if (!filePath)
+      invoke<string[]>("recent_files")
+        .then(setRecents)
+        .catch(() => {});
+  }, [filePath, active.id]);
 
   // ----- Session restore (once) -----
   useEffect(() => {
@@ -759,16 +987,18 @@ function App() {
       const s = session.current;
       // Restore folder first so the sidebar is ready.
       if (s.folderPath) {
-        const isDir = await invoke<boolean>("path_is_dir", { path: s.folderPath }).catch(
-          () => false,
-        );
+        const isDir = await invoke<boolean>("path_is_dir", {
+          path: s.folderPath,
+        }).catch(() => false);
         if (isDir) await loadFolder(s.folderPath);
         else setFolderPath(null);
       }
 
       const validPaths: string[] = [];
       for (const p of s.paths) {
-        const ok = await invoke<boolean>("path_exists", { path: p }).catch(() => false);
+        const ok = await invoke<boolean>("path_exists", { path: p }).catch(
+          () => false,
+        );
         if (ok) validPaths.push(p);
       }
 
@@ -778,13 +1008,18 @@ function App() {
         // Open without replacing mid-loop; openPath de-dupes and swaps welcome on first.
         for (const p of validPaths) {
           await openPath(p);
+          const restored = docsRef.current.find((doc) => doc.path === p);
+          if (restored)
+            documentModes.current.set(restored.id, s.pathModes?.[p] ?? s.mode);
         }
         if (s.activePath && validPaths.includes(s.activePath)) {
           // openPath already set active to the last opened; re-select preferred.
           const match = docsRef.current.find((d) => d.path === s.activePath);
-          if (match) setActiveId(match.id);
+          if (match) activateDoc(match.id);
         }
         setMode(s.mode);
+      } else {
+        setMode("preview");
       }
       if (cancelled) return;
       // Anything requested from outside during the restore opens on top of it.
@@ -797,19 +1032,30 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ----- Persist session -----
+  // ----- Persist navigation, without synchronous storage writes for each keystroke. -----
+  const openPathsKey = docs
+    .map((doc) => doc.path)
+    .filter(Boolean)
+    .join("\0");
   useEffect(() => {
     if (!sessionReady) return;
-    const paths = docs.map((d) => d.path).filter((p): p is string => !!p);
-    const activeDoc = docs.find((d) => d.id === activeId);
+    const paths = docsRef.current
+      .map((d) => d.path)
+      .filter((p): p is string => !!p);
+    const activeDoc = docsRef.current.find((d) => d.id === activeId);
     saveSession({
       version: 1,
       paths,
       activePath: activeDoc?.path ?? null,
       mode,
       folderPath,
+      pathModes: Object.fromEntries(
+        docsRef.current
+          .filter((doc) => doc.path)
+          .map((doc) => [doc.path!, documentModes.current.get(doc.id) ?? mode]),
+      ),
     });
-  }, [docs, activeId, mode, folderPath, sessionReady]);
+  }, [openPathsKey, activeId, mode, folderPath, sessionReady]);
 
   // The graph and history modals can't outlive the file they were opened for.
   // Without this, the flag stays set while nothing renders and the modal
@@ -827,27 +1073,26 @@ function App() {
         const dirtyDocs = docsRef.current.filter((d) => d.dirty);
         if (dirtyDocs.length === 0) return;
         event.preventDefault();
-        const names = dirtyDocs.map(docName).join(", ");
-        const ok = await ask(
-          `You have unsaved changes in ${names}. Quit without saving?`,
-          {
-            title: "Unsaved changes",
-            kind: "warning",
-            okLabel: "Quit",
-            cancelLabel: "Cancel",
-          },
+        const answer = await decisionRef.current(
+          dirtyDocs.map(docName).join(", "),
         );
-        if (ok) {
-          // Mark clean so a second close isn't blocked, then destroy.
-          setDocs((ds) => ds.map((d) => (d.dirty ? { ...d, dirty: false } : d)));
-          await getCurrentWindow().destroy();
+        if (answer === "cancel") return;
+        if (answer === "save") {
+          for (const doc of dirtyDocs) {
+            if (!(await saveDocument(doc.id))) {
+              activateDoc(doc.id);
+              return;
+            }
+          }
+          if (docsRef.current.some((d) => d.dirty)) return;
         }
+        await getCurrentWindow().destroy();
       })
       .then((fn) => {
         unlisten = fn;
       });
     return () => unlisten?.();
-  }, []);
+  }, [saveDocument, activateDoc]);
 
   // ----- Drag a file onto the window -----
   useEffect(() => {
@@ -858,7 +1103,8 @@ function App() {
         const p = event.payload.paths?.[0];
         if (!p) return;
         const view = cmRef.current?.view;
-        const editing = modeRef.current === "edit" || modeRef.current === "split";
+        const editing =
+          modeRef.current === "edit" || modeRef.current === "split";
         if (IMAGE_EXT.test(p) && editing && view && getActive().path) {
           attachImage(view, { kind: "file", source: p });
         } else {
@@ -874,6 +1120,7 @@ function App() {
   // ----- Native menu events -----
   const handleMenu = useCallback(
     (id: string) => {
+      if (document.querySelector("dialog[open]")) return;
       switch (id) {
         case "open":
           openFile();
@@ -921,7 +1168,8 @@ function App() {
           if (mode === "preview") setFindOpen(true);
           else {
             const v = cmRef.current?.view;
-            if (v) import("@codemirror/search").then((m) => m.openSearchPanel(v));
+            if (v)
+              import("@codemirror/search").then((m) => m.openSearchPanel(v));
           }
           break;
         case "quick_switcher":
@@ -1036,7 +1284,9 @@ function App() {
   }, [openQueue]);
 
   useEffect(() => {
-    invoke<boolean>("pandoc_available").then(setPandocOk).catch(() => {});
+    invoke<boolean>("pandoc_available")
+      .then(setPandocOk)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1045,7 +1295,12 @@ function App() {
         if (!update) return;
         const yes = await ask(
           `Markappoly ${update.version} is available. Update now? The app will download it and restart.`,
-          { title: "Update available", kind: "info", okLabel: "Update", cancelLabel: "Later" },
+          {
+            title: "Update available",
+            kind: "info",
+            okLabel: "Update",
+            cancelLabel: "Later",
+          },
         );
         if (!yes) return;
         await update.downloadAndInstall();
@@ -1057,6 +1312,7 @@ function App() {
   // ----- Keyboard shortcuts -----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
       if (!(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
       switch (key) {
@@ -1141,7 +1397,11 @@ function App() {
     { id: "toggle_split", label: "Toggle split view", hint: "⌘⇧E" },
     { id: "present", label: "Start presentation", hint: "⌘⇧P" },
     { id: "local_graph", label: "Graph", hint: "⌘⇧G" },
-    { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark this file", hint: "⌘D" },
+    {
+      id: "bookmark",
+      label: bookmarked ? "Remove bookmark" : "Bookmark this file",
+      hint: "⌘D",
+    },
     { id: "add_properties", label: "Add properties" },
     { id: "compare", label: "Compare two files" },
     { id: "copy_html", label: "Copy as HTML" },
@@ -1156,7 +1416,11 @@ function App() {
     { id: "theme_dark", label: "Theme: Dark" },
   ];
 
-  const tabs = docs.map((d) => ({ id: d.id, name: docName(d), dirty: d.dirty }));
+  const tabs = docs.map((d) => ({
+    id: d.id,
+    name: docName(d),
+    dirty: d.dirty,
+  }));
   const docA = compare ? docs.find((d) => d.id === compare.aId) : undefined;
   const docB = compare ? docs.find((d) => d.id === compare.bId) : undefined;
   const editing = mode === "edit" || mode === "split";
@@ -1164,7 +1428,11 @@ function App() {
   const exportItems: MenuEntry[] = [
     { type: "item", label: "Text (.txt)", onSelect: () => exportAs("txt") },
     { type: "item", label: "HTML (.html)", onSelect: () => exportAs("html") },
-    { type: "item", label: "JSON AST (.json)", onSelect: () => exportAs("json") },
+    {
+      type: "item",
+      label: "JSON AST (.json)",
+      onSelect: () => exportAs("json"),
+    },
     { type: "item", label: "Word (.docx)", onSelect: () => exportAs("docx") },
     { type: "item", label: "PDF (print)", onSelect: () => exportAs("pdf") },
     ...(pandocOk
@@ -1182,6 +1450,47 @@ function App() {
   ];
 
   const overflowItems: MenuEntry[] = [
+    {
+      type: "item",
+      label: bookmarked ? "Remove bookmark" : "Bookmark this file",
+      onSelect: () => filePath && prefs.toggleBookmark(filePath),
+      disabled: !filePath,
+    },
+    ...(folderPath && filePath
+      ? [
+          {
+            type: "item",
+            label: "Graph…",
+            onSelect: () => setGraphOpen(true),
+          } as MenuEntry,
+        ]
+      : []),
+    { type: "item", label: "Present", onSelect: () => setPresenting(true) },
+    {
+      type: "item",
+      label: "Save as…",
+      onSelect: () => {
+        void saveDocument(active.id, true);
+      },
+    },
+    {
+      type: "item",
+      label: "File History…",
+      onSelect: () => setHistoryOpen(true),
+      disabled: !filePath,
+    },
+    {
+      type: "item",
+      label: "Reload from disk…",
+      onSelect: reloadFile,
+      disabled: !filePath || active.saveStatus === "saving",
+    },
+    { type: "separator" },
+    { type: "header", label: `Zoom · ${Math.round(prefs.zoom * 100)}%` },
+    { type: "item", label: "Zoom in", onSelect: prefs.zoomIn },
+    { type: "item", label: "Zoom out", onSelect: prefs.zoomOut },
+    { type: "item", label: "Actual size", onSelect: prefs.zoomReset },
+    { type: "separator" },
     { type: "item", label: "Settings…", onSelect: () => setSettingsOpen(true) },
     {
       type: "item",
@@ -1189,54 +1498,46 @@ function App() {
       onSelect: startCompare,
       disabled: docs.length < 2,
     },
-    { type: "separator" },
-    { type: "header", label: "Theme" },
-    {
-      type: "item",
-      label: "System",
-      onSelect: () => prefs.setTheme("system"),
-      checked: prefs.theme === "system",
-    },
-    {
-      type: "item",
-      label: "Light",
-      onSelect: () => prefs.setTheme("light"),
-      checked: prefs.theme === "light",
-    },
-    {
-      type: "item",
-      label: "Dark",
-      onSelect: () => prefs.setTheme("dark"),
-      checked: prefs.theme === "dark",
-    },
   ];
 
   return (
     <div className="app">
       <header className="toolbar" data-tauri-drag-region>
         <div className="toolbar-group">
-          <button className="icon-btn" onClick={prefs.toggleSidebar} title="Toggle sidebar (⌘\)">
-            <SidebarIcon />
-          </button>
-          <button className="icon-btn" onClick={openFile} title="Open (⌘O)">
-            <OpenIcon />
-          </button>
           <button
             className="icon-btn"
+            onClick={prefs.toggleSidebar}
+            title="Toggle sidebar (⌘\)"
+          >
+            <SidebarIcon />
+          </button>
+          <button
+            className="icon-btn labeled-btn"
+            onClick={openFile}
+            title="Open (⌘O)"
+          >
+            <OpenIcon />
+            <span>Open</span>
+          </button>
+          <button
+            className="icon-btn labeled-btn"
             onClick={saveFile}
             title="Save (⌘S)"
-            disabled={!dirty && !!filePath}
+            disabled={active.saveStatus === "saving" || (!dirty && !!filePath)}
           >
             <SaveIcon />
-          </button>
-          <button className="icon-btn" onClick={reloadFile} title="Reload (⌘R)" disabled={!filePath}>
-            <ReloadIcon />
+            <span>{active.saveStatus === "saving" ? "Saving…" : "Save"}</span>
           </button>
         </div>
 
-        <div className="toolbar-group segmented">
+        <div
+          className="toolbar-group segmented"
+          role="group"
+          aria-label="Document view"
+        >
           <button
             className={!compare && mode === "preview" ? "active" : ""}
+            aria-pressed={!compare && mode === "preview"}
             onClick={() => {
               setCompare(null);
               setMode("preview");
@@ -1246,6 +1547,7 @@ function App() {
           </button>
           <button
             className={!compare && mode === "edit" ? "active" : ""}
+            aria-pressed={!compare && mode === "edit"}
             onClick={() => {
               setCompare(null);
               setMode("edit");
@@ -1255,6 +1557,7 @@ function App() {
           </button>
           <button
             className={!compare && mode === "split" ? "active" : ""}
+            aria-pressed={!compare && mode === "split"}
             onClick={() => {
               setCompare(null);
               setMode("split");
@@ -1268,38 +1571,6 @@ function App() {
         <div className="spacer" data-tauri-drag-region />
 
         <div className="toolbar-group">
-          <button
-            className={"icon-btn" + (bookmarked ? " star-active" : "")}
-            onClick={() => filePath && prefs.toggleBookmark(filePath)}
-            title={bookmarked ? "Remove bookmark (⌘D)" : "Bookmark (⌘D)"}
-            disabled={!filePath}
-          >
-            <StarIcon filled={bookmarked} />
-          </button>
-          <button
-            className="icon-btn"
-            onClick={() => setGraphOpen(true)}
-            title="Graph (⌘⇧G)"
-            disabled={!filePath || !folderPath}
-          >
-            <GraphIcon />
-          </button>
-          <button className="icon-btn" onClick={() => setPresenting(true)} title="Present (⌘⇧P)">
-            <PresentIcon />
-          </button>
-
-          <div className="zoom-pill">
-            <button className="icon-btn" onClick={prefs.zoomOut} title="Zoom out (⌘-)">
-              <MinusIcon />
-            </button>
-            <button className="zoom-label" onClick={prefs.zoomReset} title="Reset zoom (⌘0)">
-              {Math.round(prefs.zoom * 100)}%
-            </button>
-            <button className="icon-btn" onClick={prefs.zoomIn} title="Zoom in (⌘+)">
-              <PlusIcon />
-            </button>
-          </div>
-
           <Menu
             className="icon-btn menu-trigger"
             title="Export…"
@@ -1307,6 +1578,7 @@ function App() {
             label={
               <>
                 <ExportIcon />
+                <span>Export</span>
                 <ChevronIcon />
               </>
             }
@@ -1323,6 +1595,13 @@ function App() {
         </div>
       </header>
 
+      {notice && (
+        <div className="notice" role="alert">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)}>Dismiss</button>
+        </div>
+      )}
+      {decision.dialog}
       <div className="body">
         {prefs.sidebarOpen && (
           <Sidebar
@@ -1333,7 +1612,7 @@ function App() {
             onOpenFile={openPath}
             onOpenFolder={openFolder}
             onOpenAtLine={openPathAtLine}
-            headings={headings}
+            headings={source === WELCOME && !filePath ? [] : headings}
             onGotoHeading={gotoHeading}
             activeHeadingSlug={activeHeadingSlug}
             query={searchQuery}
@@ -1359,7 +1638,9 @@ function App() {
             <div className="compare-bar">
               <select
                 value={compare.aId}
-                onChange={(e) => setCompare((c) => c && { ...c, aId: e.target.value })}
+                onChange={(e) =>
+                  setCompare((c) => c && { ...c, aId: e.target.value })
+                }
               >
                 {docs.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -1370,7 +1651,9 @@ function App() {
               <span className="compare-vs">↔</span>
               <select
                 value={compare.bId}
-                onChange={(e) => setCompare((c) => c && { ...c, bId: e.target.value })}
+                onChange={(e) =>
+                  setCompare((c) => c && { ...c, bId: e.target.value })
+                }
               >
                 {docs.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -1408,73 +1691,103 @@ function App() {
                   S
                 </button>
                 <span className="sep" />
-                <button className="fmt" title="Heading 1" onClick={() => prefixLines("# ")}>
-                  H1
-                </button>
-                <button className="fmt" title="Heading 2" onClick={() => prefixLines("## ")}>
-                  H2
-                </button>
-                <button className="fmt" title="Heading 3" onClick={() => prefixLines("### ")}>
-                  H3
-                </button>
-                <span className="sep" />
-                <button className="fmt" title="Bulleted list" onClick={() => prefixLines("- ")}>
-                  • List
-                </button>
-                <button className="fmt" title="Numbered list" onClick={() => prefixLines("1. ")}>
-                  1. List
-                </button>
-                <button className="fmt" title="Task list" onClick={() => prefixLines("- [ ] ")}>
-                  ☐ Task
-                </button>
-                <button className="fmt" title="Blockquote" onClick={() => prefixLines("> ")}>
-                  ❝ Quote
-                </button>
-                <span className="sep" />
-                <button
+                <Menu
                   className="fmt"
-                  title="Inline code"
-                  onClick={() => wrapSelection("`", "`", "code")}
-                >
-                  {"</>"}
-                </button>
-                <button className="fmt" title="Code block" onClick={insertCodeBlock}>
-                  {"{ }"} Block
-                </button>
-                <button className="fmt" title="Link (⌘K)" onClick={insertLink}>
-                  🔗 Link
-                </button>
+                  title="Heading style"
+                  label="Heading"
+                  items={[1, 2, 3, 4, 5, 6].map((n) => ({
+                    type: "item",
+                    label: `Heading ${n}`,
+                    onSelect: () => prefixLines("#".repeat(n) + " "),
+                  }))}
+                />
                 <span className="sep" />
-                <button className="fmt" title="Insert table" onClick={() => runOnEditor(insertTable)}>
-                  ⊞ Table
-                </button>
-                <button className="fmt" title="Add row to table" onClick={() => runOnEditor(addRow)}>
-                  + Row
-                </button>
-                <button
+                <Menu
                   className="fmt"
-                  title="Add column to table"
-                  onClick={() => runOnEditor(addColumn)}
-                >
-                  + Col
-                </button>
-                <button
-                  className="fmt"
-                  title="Align table columns"
-                  onClick={() => runOnEditor(formatTable)}
-                >
-                  ↹ Align
-                </button>
+                  title="Insert formatting"
+                  label="Insert"
+                  items={[
+                    {
+                      type: "item",
+                      label: "Bulleted list",
+                      onSelect: () => prefixLines("- "),
+                    },
+                    {
+                      type: "item",
+                      label: "Numbered list",
+                      onSelect: () => prefixLines("1. "),
+                    },
+                    {
+                      type: "item",
+                      label: "Task list",
+                      onSelect: () => prefixLines("- [ ] "),
+                    },
+                    {
+                      type: "item",
+                      label: "Quote",
+                      onSelect: () => prefixLines("> "),
+                    },
+                    {
+                      type: "item",
+                      label: "Inline code",
+                      onSelect: () => wrapSelection("`", "`", "code"),
+                    },
+                    {
+                      type: "item",
+                      label: "Code block",
+                      onSelect: insertCodeBlock,
+                    },
+                    { type: "item", label: "Link", onSelect: insertLink },
+                    {
+                      type: "item",
+                      label: "Table",
+                      onSelect: () => runOnEditor(insertTable),
+                    },
+                  ]}
+                />
+                {inTable && (
+                  <>
+                    <span className="sep" />
+                    <span className="format-context">Table</span>
+                    <button
+                      className="fmt"
+                      title="Add row to table"
+                      onClick={() => runOnEditor(addRow)}
+                    >
+                      + Row
+                    </button>
+                    <button
+                      className="fmt"
+                      title="Add column to table"
+                      onClick={() => runOnEditor(addColumn)}
+                    >
+                      + Col
+                    </button>
+                    <button
+                      className="fmt"
+                      title="Align table columns"
+                      onClick={() => runOnEditor(formatTable)}
+                    >
+                      ↹ Align
+                    </button>
+                  </>
+                )}
               </div>
             )
           )}
 
           {findOpen && !compare && mode === "preview" && (
-            <FindBar container={contentRef.current} onClose={() => setFindOpen(false)} />
+            <FindBar
+              container={contentRef.current}
+              onClose={() => setFindOpen(false)}
+            />
           )}
 
           <main
             className="content"
+            id="document-panel"
+            role="tabpanel"
+            aria-labelledby={`tab-${active.id}`}
             ref={(el) => {
               contentRef.current = el;
               setContentEl(el);
@@ -1482,10 +1795,56 @@ function App() {
           >
             {compare ? (
               <Suspense fallback={<div className="lazy-fallback" />}>
-                <DiffView a={docA?.source ?? ""} b={docB?.source ?? ""} dark={prefs.dark} />
+                <DiffView
+                  a={docA?.source ?? ""}
+                  b={docB?.source ?? ""}
+                  dark={prefs.dark}
+                />
               </Suspense>
             ) : mode === "preview" ? (
               <div className="markdown-body">
+                {source === WELCOME && !filePath && (
+                  <section className="welcome-actions" aria-label="Get started">
+                    <h1>Open a document. Settle into reading.</h1>
+                    <p>
+                      Choose a Markdown file, browse a folder, or start a new
+                      note.
+                    </p>
+                    <div className="welcome-buttons">
+                      <button className="primary-action" onClick={openFile}>
+                        Open File…
+                      </button>
+                      <button onClick={openFolder}>Open Folder…</button>
+                      <button onClick={newDoc}>New document</button>
+                    </div>
+                    {recents.length > 0 && (
+                      <>
+                        <h2>Recent documents</h2>
+                        <ul>
+                          {recents.slice(0, 5).map((path) => (
+                            <li key={path}>
+                              <button
+                                title={path}
+                                onClick={() => openPath(path)}
+                              >
+                                {basename(path)}
+                                <span>{dirOf(path)}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    <details>
+                      <summary>Explore Markdown examples</summary>
+                      <Preview
+                        source={WELCOME}
+                        dark={prefs.dark}
+                        onToggleTask={toggleTask}
+                      />
+                    </details>
+                  </section>
+                )}
                 <FrontmatterBar
                   source={source}
                   onChangeSource={(next) =>
@@ -1493,28 +1852,36 @@ function App() {
                   }
                   onTagClick={onTagClick}
                 />
-                <Preview
-                  source={source}
-                  dark={prefs.dark}
-                  basePath={baseDir}
-                  onToggleTask={toggleTask}
-                  onOpenLocal={openPath}
-                  blockRemoteImages={prefs.blockRemoteImages}
-                  resolveWiki={resolveWiki}
-                  onTagClick={onTagClick}
-                />
+                {!(source === WELCOME && !filePath) && (
+                  <Preview
+                    source={source}
+                    dark={prefs.dark}
+                    basePath={baseDir}
+                    onToggleTask={toggleTask}
+                    onOpenLocal={openPath}
+                    blockRemoteImages={prefs.blockRemoteImages}
+                    resolveWiki={resolveWiki}
+                    onTagClick={onTagClick}
+                  />
+                )}
               </div>
             ) : mode === "split" ? (
               <Suspense fallback={<div className="lazy-fallback" />}>
                 <SplitView
+                  key={active.id}
                   docId={active.id}
+                  sessions={editorSessions.current}
+                  onTableChange={setInTable}
+                  onReady={editorReady}
                   value={source}
                   cmRef={cmRef}
                   features={editorFeatures}
                   onAttachImage={attachImage}
                   getFiles={getFiles}
                   getTags={getTags}
-                  onChange={(value) => patchDocById(active.id, { source: value, dirty: true })}
+                  onChange={(value) =>
+                    patchDocById(active.id, { source: value, dirty: true })
+                  }
                   dark={prefs.dark}
                   basePath={baseDir}
                   onToggleTask={toggleTask}
@@ -1527,27 +1894,58 @@ function App() {
             ) : (
               <Suspense fallback={<div className="lazy-fallback" />}>
                 <EditorPane
+                  key={active.id}
                   docId={active.id}
+                  sessions={editorSessions.current}
+                  onTableChange={setInTable}
+                  onReady={editorReady}
                   value={source}
                   cmRef={cmRef}
                   features={editorFeatures}
                   onAttachImage={attachImage}
                   getFiles={getFiles}
                   getTags={getTags}
-                  onChange={(value) => patchDocById(active.id, { source: value, dirty: true })}
+                  onChange={(value) =>
+                    patchDocById(active.id, { source: value, dirty: true })
+                  }
                 />
               </Suspense>
             )}
           </main>
 
+          {(active.saveStatus === "error" ||
+            active.saveStatus === "conflict") && (
+            <div className="notice" role="alert">
+              <span title={active.saveError}>
+                {active.saveStatus === "conflict"
+                  ? "This file changed on disk. Your edits are still here."
+                  : "Could not save. Your edits are still here."}
+              </span>
+              <button onClick={saveFile}>
+                {active.saveStatus === "conflict"
+                  ? "Save my version…"
+                  : "Retry save"}
+              </button>
+              <button onClick={() => saveDocument(active.id, true)}>
+                Save a copy…
+              </button>
+              {filePath && (
+                <button onClick={reloadFile}>Reload disk version…</button>
+              )}
+            </div>
+          )}
           <footer className="status-bar">
-            <span>
+            <span role="status" aria-live="polite">
               {compare
                 ? `Comparing ${docName(docA ?? active)} ↔ ${docName(docB ?? active)}`
-                : `${docName(active)}${dirty ? " •" : ""}`}
+                : source === WELCOME && !filePath
+                  ? "Ready to read"
+                  : `${docName(active)} · ${active.saveStatus === "saving" ? "Saving…" : active.saveStatus === "error" ? "Save failed" : active.saveStatus === "conflict" ? "Disk conflict" : dirty ? "Unsaved changes" : filePath ? "Saved" : "Not saved yet"}`}
             </span>
             <span>
-              {wordCount} words · {readMin} min read
+              {source === WELCOME && !filePath
+                ? "Markdown files stay on your computer"
+                : `${wordCount} words · ${readMin} min read`}
               {compare
                 ? " · Compare"
                 : mode === "edit"
@@ -1571,7 +1969,9 @@ function App() {
         />
       )}
 
-      {settingsOpen && <Settings prefs={prefs} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <Settings prefs={prefs} onClose={() => setSettingsOpen(false)} />
+      )}
 
       {switcherOpen && (
         <QuickSwitcher
@@ -1603,7 +2003,9 @@ function App() {
             path={filePath}
             currentSource={source}
             dark={prefs.dark}
-            onRestore={(text) => patchDocById(active.id, { source: text, dirty: true })}
+            onRestore={(text) =>
+              patchDocById(active.id, { source: text, dirty: true })
+            }
             onClose={() => setHistoryOpen(false)}
           />
         </Suspense>

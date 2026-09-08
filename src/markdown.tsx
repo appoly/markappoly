@@ -140,12 +140,26 @@ function remarkAlerts() {
   return (tree: any) => walk(tree);
 }
 
+function rehypeSourceLines() {
+  type Node = { type: string; position?: { start: { line: number } }; properties?: Record<string, unknown>; children?: Node[] };
+  return (tree: Node) => {
+    const visit = (node: Node) => {
+      if (node.type === "element" && node.position) {
+        node.properties = { ...node.properties, "data-source-line": node.position.start.line };
+      }
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+  };
+}
+
 const rehypePlugins: PluggableList = [
   rehypeRaw,
   [rehypeSanitize, sanitizeSchema],
   rehypeKatex,
   rehypeSlug,
   rehypeHighlight,
+  rehypeSourceLines,
 ];
 
 const SAFE_LINK = /^(https?:|mailto:)/i;

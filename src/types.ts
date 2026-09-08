@@ -7,6 +7,8 @@ export type Doc = {
   source: string;
   dirty: boolean;
   mtime: number | null;
+  saveStatus?: "idle" | "saving" | "error" | "conflict";
+  saveError?: string;
 };
 
 export function makeDoc(partial: Partial<Doc> = {}): Doc {

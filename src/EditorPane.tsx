@@ -1,17 +1,28 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import CodeMirror, { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { search } from "@codemirror/search";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { editorTheme, editorHighlight } from "./editorTheme";
-import { focusMode, typewriter, spellcheck, pasteMarkdown } from "./editorFeatures";
+import {
+  focusMode,
+  typewriter,
+  spellcheck,
+  pasteMarkdown,
+} from "./editorFeatures";
 import { wikiCompletion } from "./wikiComplete";
 import { Preview } from "./markdown";
 import { useDebouncedValue } from "./useDebouncedValue";
+import { restoreEditor, type EditorSession } from "./editorSession";
+import { isInTable } from "./tableTools";
 import type { FileEntry } from "./Sidebar";
 
-const EDITOR_BASE: Extension[] = [editorTheme, editorHighlight, EditorView.lineWrapping];
+const EDITOR_BASE: Extension[] = [
+  editorTheme,
+  editorHighlight,
+  EditorView.lineWrapping,
+];
 
 export type AttachPayload =
   | { kind: "data"; data: string; ext: string }
@@ -28,6 +39,9 @@ export type EditorFeatures = {
 
 export type EditorProps = {
   docId: string;
+  sessions: Map<string, EditorSession>;
+  onTableChange: (inside: boolean) => void;
+  onReady: (view: EditorView) => void;
   value: string;
   cmRef: React.RefObject<ReactCodeMirrorRef | null>;
   onChange: (v: string) => void;
@@ -40,6 +54,9 @@ export type EditorProps = {
 /** The CodeMirror source editor, shared by the Edit and Split views. */
 export function EditorPane({
   docId,
+  sessions,
+  onTableChange,
+  onReady,
   value,
   cmRef,
   onChange,
@@ -48,6 +65,29 @@ export function EditorPane({
   getFiles,
   getTags,
 }: EditorProps) {
+  const initial = useMemo(
+    () => restoreEditor(sessions.get(docId), value),
+    [docId, sessions],
+  );
+  const cacheView = useCallback(
+    (view: EditorView) => {
+      sessions.set(docId, {
+        state: view.state,
+        top: view.scrollDOM.scrollTop,
+        left: view.scrollDOM.scrollLeft,
+      });
+    },
+    [docId, sessions],
+  );
+  const sessionExt = useMemo(
+    () =>
+      EditorView.domEventHandlers({
+        scroll: (_event, view) => {
+          cacheView(view);
+        },
+      }),
+    [cacheView],
+  );
   // Pasted images become attachments; registered before pasteMarkdown so image
   // pastes never reach the rich-text handler.
   const imageExt = useMemo(
@@ -79,10 +119,20 @@ export function EditorPane({
     [onAttachImage],
   );
 
-  const wikiExt = useMemo(() => wikiCompletion(getFiles, getTags), [getFiles, getTags]);
+  const wikiExt = useMemo(
+    () => wikiCompletion(getFiles, getTags),
+    [getFiles, getTags],
+  );
 
   const extensions = useMemo(() => {
-    const ext: Extension[] = [markdown(), search(), ...EDITOR_BASE, imageExt, wikiExt];
+    const ext: Extension[] = [
+      markdown(),
+      search(),
+      ...EDITOR_BASE,
+      imageExt,
+      wikiExt,
+      sessionExt,
+    ];
     if (features.pasteAsMarkdown) ext.push(pasteMarkdown);
     if (features.spellcheck) ext.push(spellcheck);
     if (features.focusMode) ext.push(focusMode);
@@ -91,6 +141,7 @@ export function EditorPane({
   }, [
     imageExt,
     wikiExt,
+    sessionExt,
     features.pasteAsMarkdown,
     features.spellcheck,
     features.focusMode,
@@ -103,17 +154,35 @@ export function EditorPane({
       ref={cmRef}
       className="editor"
       value={value}
+      initialState={initial}
+      onUpdate={(update) => {
+        cacheView(update.view);
+        onTableChange(
+          isInTable(update.state.doc, update.state.selection.main.head),
+        );
+      }}
       height="100%"
       theme="none"
-      basicSetup={{ foldGutter: false, syntaxHighlighting: false, autocompletion: false }}
+      basicSetup={{
+        foldGutter: false,
+        syntaxHighlighting: false,
+        autocompletion: false,
+      }}
       extensions={extensions}
       onChange={onChange}
       onCreateEditor={(view) => {
-        // WKWebView can lay the gutter out before the container has its final
-        // size, stacking line numbers above the text. Re-measure once layout
-        // has settled so the gutter sits beside the content.
-        requestAnimationFrame(() => view.requestMeasure());
-        setTimeout(() => view.requestMeasure(), 60);
+        const saved = sessions.get(docId);
+        requestAnimationFrame(() => {
+          view.requestMeasure();
+          if (saved) {
+            view.scrollDOM.scrollTop = saved.top;
+            view.scrollDOM.scrollLeft = saved.left;
+          }
+          onTableChange(
+            isInTable(view.state.doc, view.state.selection.main.head),
+          );
+          onReady(view);
+        });
       }}
     />
   );
@@ -151,7 +220,8 @@ export function SplitView({
       if (lock.current) return;
       lock.current = true;
       const max = Math.max(1, from.scrollHeight - from.clientHeight);
-      to.scrollTop = (from.scrollTop / max) * (to.scrollHeight - to.clientHeight);
+      to.scrollTop =
+        (from.scrollTop / max) * (to.scrollHeight - to.clientHeight);
       requestAnimationFrame(() => {
         lock.current = false;
       });

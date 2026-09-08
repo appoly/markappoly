@@ -128,7 +128,7 @@ export function Menu({
                 role="menuitem"
                 disabled={it.disabled}
                 onClick={() => {
-                  close(false);
+                  close(true);
                   it.onSelect();
                 }}
               >

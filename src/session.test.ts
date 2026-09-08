@@ -13,7 +13,10 @@ const localStorageMock = {
   },
   clear: () => store.clear(),
 };
-Object.defineProperty(globalThis, "localStorage", { value: localStorageMock, configurable: true });
+Object.defineProperty(globalThis, "localStorage", {
+  value: localStorageMock,
+  configurable: true,
+});
 
 describe("session", () => {
   beforeEach(() => {
@@ -42,5 +45,33 @@ describe("session", () => {
     localStorage.setItem("mv.session", "{not json");
     expect(loadSession().paths).toEqual([]);
     expect(loadSession().mode).toBe("preview");
+  });
+});
+
+describe("per-document view preferences", () => {
+  it("restores independent view modes while accepting old sessions", () => {
+    saveSession({
+      version: 1,
+      paths: ["/a.md", "/b.md"],
+      activePath: "/b.md",
+      mode: "split",
+      folderPath: null,
+      pathModes: { "/a.md": "preview", "/b.md": "split" },
+    });
+    expect(loadSession().pathModes).toEqual({
+      "/a.md": "preview",
+      "/b.md": "split",
+    });
+  });
+  it("drops invalid modes from stored sessions", () => {
+    localStorage.setItem(
+      "mv.session",
+      JSON.stringify({
+        version: 1,
+        paths: [],
+        pathModes: { a: "edit", b: "invalid" },
+      }),
+    );
+    expect(loadSession().pathModes).toEqual({ a: "edit" });
   });
 });

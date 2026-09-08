@@ -15,6 +15,15 @@ function findTable(doc: Text, pos: number): Block | null {
   return { start, end };
 }
 
+export function isInTable(doc: Text, pos: number): boolean {
+  const block = findTable(doc, pos);
+  if (!block || block.end === block.start) return false;
+  for (let line = block.start; line <= block.end; line++) {
+    if (isSep(doc.line(line).text)) return true;
+  }
+  return false;
+}
+
 const SEP_RE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
 const isSep = (line: string) => SEP_RE.test(line) && line.includes("-");
 
@@ -27,7 +36,9 @@ function splitCells(line: string): string[] {
 
 /** Render a matrix back to an aligned GFM table; the separator row is regenerated. */
 function renderTable(rows: string[][], sepIndex: number): string {
-  const bodyLengths = rows.filter((_, i) => i !== sepIndex).map((r) => r.length);
+  const bodyLengths = rows
+    .filter((_, i) => i !== sepIndex)
+    .map((r) => r.length);
   const cols = Math.max(...bodyLengths, 1);
   const widths: number[] = [];
   for (let c = 0; c < cols; c++) {
@@ -39,8 +50,11 @@ function renderTable(rows: string[][], sepIndex: number): string {
   }
   return rows
     .map((r, i) => {
-      if (i === sepIndex) return "| " + widths.map((w) => "-".repeat(w)).join(" | ") + " |";
-      return "| " + widths.map((w, c) => (r[c] ?? "").padEnd(w)).join(" | ") + " |";
+      if (i === sepIndex)
+        return "| " + widths.map((w) => "-".repeat(w)).join(" | ") + " |";
+      return (
+        "| " + widths.map((w, c) => (r[c] ?? "").padEnd(w)).join(" | ") + " |"
+      );
     })
     .join("\n");
 }
@@ -48,7 +62,10 @@ function renderTable(rows: string[][], sepIndex: number): string {
 /** Parse the table at the cursor, transform its matrix, and write it back aligned. */
 function editTable(
   view: EditorView,
-  transform: (rows: string[][], sepIndex: number) => { rows: string[][]; sepIndex: number },
+  transform: (
+    rows: string[][],
+    sepIndex: number,
+  ) => { rows: string[][]; sepIndex: number },
 ): boolean {
   const doc = view.state.doc;
   const blk = findTable(doc, view.state.selection.main.from);
@@ -66,7 +83,10 @@ function editTable(
   const { rows, sepIndex: si } = transform(rawRows, sepIndex);
   const from = doc.line(blk.start).from;
   const to = doc.line(blk.end).to;
-  view.dispatch({ changes: { from, to, insert: renderTable(rows, si) }, selection: { anchor: from } });
+  view.dispatch({
+    changes: { from, to, insert: renderTable(rows, si) },
+    selection: { anchor: from },
+  });
   view.focus();
   return true;
 }

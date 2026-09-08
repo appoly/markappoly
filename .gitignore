@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Design-critique scratch from the impeccable skill
+.impeccable

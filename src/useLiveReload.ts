@@ -31,14 +31,18 @@ export function useLiveReload(
       const path = e.payload;
       if (!path) return;
       const cur = docsRef.current?.find((d) => d.path === path);
-      if (!cur || cur.dirty) return;
+      if (!cur || cur.dirty || cur.saveStatus === "saving") return;
       try {
         const text = await invoke<string>("read_file", { path });
         if (text === cur.source) {
           // Still refresh mtime so we don't thrash if the watcher re-fires.
           try {
             const mtime = await invoke<number>("file_mtime", { path });
-            if (mtime !== cur.mtime) patchRef.current(cur.id, { mtime });
+            if (
+              !docsRef.current?.find((d) => d.id === cur.id)?.dirty &&
+              mtime !== cur.mtime
+            )
+              patchRef.current(cur.id, { mtime });
           } catch {
             /* ignore */
           }
@@ -50,7 +54,16 @@ export function useLiveReload(
         } catch {
           /* ignore */
         }
-        patchRef.current(cur.id, { source: text, dirty: false, mtime });
+        // A user may start typing while the disk read is in flight.
+        const latest = docsRef.current?.find((d) => d.id === cur.id);
+        if (!latest || latest.dirty || latest.source !== cur.source) return;
+        patchRef.current(cur.id, {
+          source: text,
+          dirty: false,
+          mtime,
+          saveStatus: "idle",
+          saveError: undefined,
+        });
       } catch {
         /* mid-write or deleted */
       }
