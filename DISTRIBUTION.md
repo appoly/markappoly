@@ -110,6 +110,6 @@ macOS builds are signed with the Developer ID certificate and notarized via the 
 1. `npm audit` (high/critical, production deps, honouring `audit-ci.jsonc`) and `cargo audit`.
 2. If a non-breaking fix exists: `npm audit fix` / `cargo audit fix`, bump the patch version in `package.json`, `Cargo.toml`, and `tauri.conf.json`.
 3. After unit tests and a frontend build pass, it commits, tags `vX.Y.Z`, and dispatches the Release workflow above so a signed draft appears on GitHub Releases.
-4. If something high/critical remains and cannot be auto-fixed, it opens (or comments on) an **Outstanding dependency vulnerabilities** issue instead of shipping.
+4. If a high/critical npm advisory or any Rust vulnerability remains and cannot be auto-fixed, it opens (or comments on) an **Outstanding dependency vulnerabilities** issue instead of shipping.
 
 It will not cut a release for allowlisted, still-unpatched advisories. The job needs permission to push to `main` (or a bypass for the Actions bot if the branch is protected).

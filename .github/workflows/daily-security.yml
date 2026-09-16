@@ -130,13 +130,13 @@ jobs:
           set -euo pipefail
           TITLE="Outstanding dependency vulnerabilities"
           BODY="$(cat <<EOF
-          The daily security audit found high/critical advisories that could not be auto-remediated.
+          The daily security audit found dependency vulnerabilities that could not be auto-remediated (high/critical npm advisories or Rust vulnerabilities of any severity).
 
           \`\`\`
           ${REMAINING}
           \`\`\`
 
-          Allowlisted findings (see \`audit-ci.jsonc\`) are ignored. Once a patched release exists, this job will apply it and open a draft GitHub Release.
+          Allowlisted findings (see \`audit-ci.jsonc\`) are ignored. The job attempts safe fixes and opens a draft GitHub Release when remediation succeeds. Failed automatic fixes may require a manual dependency update.
           EOF
           )"
           EXISTING="$(gh issue list --state open --search "in:title ${TITLE}" --json number --jq '.[0].number // empty')"
