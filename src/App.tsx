@@ -23,6 +23,7 @@ import { QuickSwitcher, type Command } from "./QuickSwitcher";
 import { useVault } from "./vault";
 import { parseFrontmatter } from "./frontmatter";
 import { TabBar } from "./TabBar";
+import { HeadingRail } from "./HeadingRail";
 import { PresentView } from "./PresentView";
 import { usePreferences } from "./prefs";
 import { Settings } from "./Settings";
@@ -967,7 +968,10 @@ function App() {
       } else {
         document
           .getElementById(h.slug)
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          ?.scrollIntoView({
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+            block: "start",
+          });
       }
     },
     [mode],
@@ -1507,6 +1511,8 @@ function App() {
           <button
             className="icon-btn"
             onClick={prefs.toggleSidebar}
+            aria-label="Toggle sidebar"
+            aria-expanded={prefs.sidebarOpen}
             title="Toggle sidebar (⌘\)"
           >
             <SidebarIcon />
@@ -1783,78 +1789,115 @@ function App() {
             />
           )}
 
-          <main
-            className="content"
-            id="document-panel"
-            role="tabpanel"
-            aria-labelledby={`tab-${active.id}`}
-            ref={(el) => {
-              contentRef.current = el;
-              setContentEl(el);
-            }}
-          >
-            {compare ? (
-              <Suspense fallback={<div className="lazy-fallback" />}>
-                <DiffView
-                  a={docA?.source ?? ""}
-                  b={docB?.source ?? ""}
-                  dark={prefs.dark}
+          <div className="document-area">
+            {!prefs.sidebarOpen && mode === "preview" && !compare &&
+              source !== WELCOME && headings.length > 1 && (
+                <HeadingRail
+                  key={active.id}
+                  headings={headings}
+                  activeSlug={activeHeadingSlug}
+                  onNavigate={gotoHeading}
                 />
-              </Suspense>
-            ) : mode === "preview" ? (
-              <div className="markdown-body">
-                {source === WELCOME && !filePath && (
-                  <section className="welcome-actions" aria-label="Get started">
-                    <h1>Open a document. Settle into reading.</h1>
-                    <p>
-                      Choose a Markdown file, browse a folder, or start a new
-                      note.
-                    </p>
-                    <div className="welcome-buttons">
-                      <button className="primary-action" onClick={openFile}>
-                        Open File…
-                      </button>
-                      <button onClick={openFolder}>Open Folder…</button>
-                      <button onClick={newDoc}>New document</button>
-                    </div>
-                    {recents.length > 0 && (
-                      <>
-                        <h2>Recent documents</h2>
-                        <ul>
-                          {recents.slice(0, 5).map((path) => (
-                            <li key={path}>
-                              <button
-                                title={path}
-                                onClick={() => openPath(path)}
-                              >
-                                {basename(path)}
-                                <span>{dirOf(path)}</span>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
-                    <details>
-                      <summary>Explore Markdown examples</summary>
-                      <Preview
-                        source={WELCOME}
-                        dark={prefs.dark}
-                        onToggleTask={toggleTask}
-                      />
-                    </details>
-                  </section>
-                )}
-                <FrontmatterBar
-                  source={source}
-                  onChangeSource={(next) =>
-                    patchDocById(active.id, { source: next, dirty: true })
-                  }
-                  onTagClick={onTagClick}
-                />
-                {!(source === WELCOME && !filePath) && (
-                  <Preview
+              )}
+            <main
+              className="content"
+              id="document-panel"
+              role="tabpanel"
+              aria-labelledby={`tab-${active.id}`}
+              ref={(el) => {
+                contentRef.current = el;
+                setContentEl(el);
+              }}
+            >
+              {compare ? (
+                <Suspense fallback={<div className="lazy-fallback" />}>
+                  <DiffView
+                    a={docA?.source ?? ""}
+                    b={docB?.source ?? ""}
+                    dark={prefs.dark}
+                  />
+                </Suspense>
+              ) : mode === "preview" ? (
+                <div className="markdown-body">
+                  {source === WELCOME && !filePath && (
+                    <section className="welcome-actions" aria-label="Get started">
+                      <h1>Open a document. Settle into reading.</h1>
+                      <p>
+                        Choose a Markdown file, browse a folder, or start a new
+                        note.
+                      </p>
+                      <div className="welcome-buttons">
+                        <button className="primary-action" onClick={openFile}>
+                          Open File…
+                        </button>
+                        <button onClick={openFolder}>Open Folder…</button>
+                        <button onClick={newDoc}>New document</button>
+                      </div>
+                      {recents.length > 0 && (
+                        <>
+                          <h2>Recent documents</h2>
+                          <ul>
+                            {recents.slice(0, 5).map((path) => (
+                              <li key={path}>
+                                <button
+                                  title={path}
+                                  onClick={() => openPath(path)}
+                                >
+                                  {basename(path)}
+                                  <span>{dirOf(path)}</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                      <details>
+                        <summary>Explore Markdown examples</summary>
+                        <Preview
+                          source={WELCOME}
+                          dark={prefs.dark}
+                          onToggleTask={toggleTask}
+                        />
+                      </details>
+                    </section>
+                  )}
+                  <FrontmatterBar
                     source={source}
+                    onChangeSource={(next) =>
+                      patchDocById(active.id, { source: next, dirty: true })
+                    }
+                    onTagClick={onTagClick}
+                  />
+                  {!(source === WELCOME && !filePath) && (
+                    <Preview
+                      source={source}
+                      dark={prefs.dark}
+                      basePath={baseDir}
+                      onToggleTask={toggleTask}
+                      onOpenLocal={openPath}
+                      blockRemoteImages={prefs.blockRemoteImages}
+                      resolveWiki={resolveWiki}
+                      onTagClick={onTagClick}
+                    />
+                  )}
+                </div>
+              ) : mode === "split" ? (
+                <Suspense fallback={<div className="lazy-fallback" />}>
+                  <SplitView
+                    key={active.id}
+                    docId={active.id}
+                    sessions={editorSessions.current}
+                    onTableChange={setInTable}
+                    onReady={editorReady}
+                    value={source}
+                    cmRef={cmRef}
+                    features={editorFeatures}
+                    onAttachImage={attachImage}
+                    getFiles={getFiles}
+                    getTags={getTags}
+                    onChange={(value) =>
+                      patchDocById(active.id, { source: value, dirty: true })
+                    }
                     dark={prefs.dark}
                     basePath={baseDir}
                     onToggleTask={toggleTask}
@@ -1863,55 +1906,29 @@ function App() {
                     resolveWiki={resolveWiki}
                     onTagClick={onTagClick}
                   />
-                )}
-              </div>
-            ) : mode === "split" ? (
-              <Suspense fallback={<div className="lazy-fallback" />}>
-                <SplitView
-                  key={active.id}
-                  docId={active.id}
-                  sessions={editorSessions.current}
-                  onTableChange={setInTable}
-                  onReady={editorReady}
-                  value={source}
-                  cmRef={cmRef}
-                  features={editorFeatures}
-                  onAttachImage={attachImage}
-                  getFiles={getFiles}
-                  getTags={getTags}
-                  onChange={(value) =>
-                    patchDocById(active.id, { source: value, dirty: true })
-                  }
-                  dark={prefs.dark}
-                  basePath={baseDir}
-                  onToggleTask={toggleTask}
-                  onOpenLocal={openPath}
-                  blockRemoteImages={prefs.blockRemoteImages}
-                  resolveWiki={resolveWiki}
-                  onTagClick={onTagClick}
-                />
-              </Suspense>
-            ) : (
-              <Suspense fallback={<div className="lazy-fallback" />}>
-                <EditorPane
-                  key={active.id}
-                  docId={active.id}
-                  sessions={editorSessions.current}
-                  onTableChange={setInTable}
-                  onReady={editorReady}
-                  value={source}
-                  cmRef={cmRef}
-                  features={editorFeatures}
-                  onAttachImage={attachImage}
-                  getFiles={getFiles}
-                  getTags={getTags}
-                  onChange={(value) =>
-                    patchDocById(active.id, { source: value, dirty: true })
-                  }
-                />
-              </Suspense>
-            )}
-          </main>
+                </Suspense>
+              ) : (
+                <Suspense fallback={<div className="lazy-fallback" />}>
+                  <EditorPane
+                    key={active.id}
+                    docId={active.id}
+                    sessions={editorSessions.current}
+                    onTableChange={setInTable}
+                    onReady={editorReady}
+                    value={source}
+                    cmRef={cmRef}
+                    features={editorFeatures}
+                    onAttachImage={attachImage}
+                    getFiles={getFiles}
+                    getTags={getTags}
+                    onChange={(value) =>
+                      patchDocById(active.id, { source: value, dirty: true })
+                    }
+                  />
+                </Suspense>
+              )}
+            </main>
+          </div>
 
           {(active.saveStatus === "error" ||
             active.saveStatus === "conflict") && (

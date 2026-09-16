@@ -1,0 +1,67 @@
+.document-area {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  background: var(--reading-bg);
+}
+.document-area > .content { min-width: 0; }
+.document-area:has(.heading-rail) > .content { padding-inline-start: 36px; }
+.heading-rail {
+  position: absolute;
+  inset: 40px auto auto 4px;
+  z-index: 12;
+  display: flex;
+  align-items: flex-start;
+  max-height: calc(100% - 56px);
+}
+.heading-rail-trigger {
+  width: 32px;
+  min-height: 44px;
+  padding: 12px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.heading-rail-trigger:hover { background: var(--code-bg); }
+.heading-rail-marks { display: flex; flex-direction: column; gap: 7px; }
+.heading-rail-marks > span { width: 8px; height: 2px; background: currentColor; }
+.heading-rail-marks > .current { width: 15px; color: var(--text); }
+.heading-rail-popover {
+  width: min(300px, calc(100vw - 64px));
+  max-height: min(480px, calc(100vh - 220px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--modal-bg);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+  padding: 12px 8px;
+}
+.heading-rail-title { padding: 4px 12px 10px; font-size: 12px; color: var(--text-muted); }
+.heading-rail-outline { list-style: none; padding: 0; margin: 0; }
+.heading-rail-outline button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  text-align: start;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.heading-rail-outline button:hover { background: var(--code-bg); color: var(--text); }
+.heading-rail-outline [aria-current] { color: var(--text); font-weight: 600; }
+.heading-rail-outline button:focus-visible { outline-offset: -2px; }
+@media print {
+  .heading-rail { display: none !important; }
+  .document-area { display: block; overflow: visible; }
+  .document-area:has(.heading-rail) > .content { padding-inline-start: 0; }
+}

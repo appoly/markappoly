@@ -45,6 +45,7 @@ After the first launch the app keeps itself up to date: when a new version ships
 - Session restore: tabs, folder, and each document’s view mode come back when you relaunch
 - Cursor, undo history, and reading position stay with each tab while you work
 - A resizable sidebar with collapsible outline, bookmarks, and backlinks, plus a welcome screen with recent files
+- With the sidebar closed, a compact heading rail tracks your place in Preview; hover or click it to jump between sections, or use Tab and Enter
 - Adjustable reading width, font, and line spacing, plus your own custom CSS, and an option to block remote images
 - YAML frontmatter chrome (title, tags, date) above the preview
 - Relative Markdown links open sibling notes as tabs
