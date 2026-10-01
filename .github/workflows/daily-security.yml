@@ -81,6 +81,12 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # `npm audit fix --omit=dev` prunes devDependencies (vitest, vite, tsc)
+      # from node_modules, so reinstall from the remediated lockfile.
+      - name: Reinstall dependencies from remediated lockfile
+        if: steps.scan.outputs.remediated == 'true' && steps.scan.outputs.audit_ok == 'true'
+        run: npm ci
+
       - name: Unit tests
         if: steps.scan.outputs.remediated == 'true' && steps.scan.outputs.audit_ok == 'true'
         run: npm test
