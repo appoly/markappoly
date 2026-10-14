@@ -53,6 +53,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "macOS": {
+      "files": {
+        "Resources/cli/markappoly": "cli/markappoly"
+      }
+    },
     "fileAssociations": [
       {
         "ext": ["md", "markdown"],

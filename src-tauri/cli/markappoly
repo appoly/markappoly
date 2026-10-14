@@ -1,0 +1,31 @@
+#!/bin/sh
+# markappoly: open Markdown files, folders, or piped text in Markappoly.
+# Run `markappoly --help` for usage.
+#
+# Installed from Markappoly's app menu (Install Command Line Tool…). Inside the
+# macOS app bundle this script finds the app relative to itself; installed
+# copies on Linux have the app's path filled in on the next line.
+MARKAPPOLY_BIN=""
+
+if [ -z "$MARKAPPOLY_BIN" ]; then
+  # Follow the /usr/local/bin symlink back into Markappoly.app.
+  script="$0"
+  while [ -L "$script" ]; do
+    link=$(readlink "$script")
+    case "$link" in
+      /*) script="$link" ;;
+      *) script="$(dirname "$script")/$link" ;;
+    esac
+  done
+  contents="$(cd "$(dirname "$script")/../.." && pwd)"
+  exe=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$contents/Info.plist" 2>/dev/null)
+  MARKAPPOLY_BIN="$contents/MacOS/$exe"
+fi
+
+if [ ! -x "$MARKAPPOLY_BIN" ]; then
+  echo "markappoly: can't find Markappoly at $MARKAPPOLY_BIN." >&2
+  echo "Reinstall the command from Markappoly's menu (Install Command Line Tool…)." >&2
+  exit 1
+fi
+
+exec "$MARKAPPOLY_BIN" --cli "$@"
