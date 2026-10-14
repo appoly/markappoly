@@ -47,6 +47,7 @@ import { loadSession, saveSession } from "./session";
 import { createOpenQueue } from "./openQueue";
 import { basename, dirOf, MD_EXTENSIONS } from "./paths";
 import { makeDoc, type Doc, type ExportKind, type Mode } from "./types";
+import type { ExportContext } from "./export";
 import { useSaveDecision } from "./Modal";
 import { createDocumentSaver } from "./saveDocument";
 import type { EditorSession } from "./editorSession";
@@ -536,17 +537,62 @@ function App() {
     return () => window.removeEventListener("blur", onBlur);
   }, [prefs.autosave, saveDocById]);
 
+  /** What the exporters need to reproduce the preview for one document. */
+  const exportContextFor = useCallback(
+    async (doc: Doc): Promise<ExportContext> => {
+      const { renderMermaidSvg } = await import("./export");
+      return {
+        baseDir: dirOf(doc.path),
+        resolveWiki,
+        readText: (path) => invoke<string>("read_file", { path }),
+        readBase64: (path) => invoke<string>("read_file_base64", { path }),
+        renderMermaid: renderMermaidSvg,
+      };
+    },
+    [resolveWiki],
+  );
+
+  /**
+   * Warn (without stopping the export) when local images the document
+   * references aren't on disk, so a broken export isn't a surprise.
+   */
+  const warnMissingImages = useCallback(
+    async (doc: Doc) => {
+      const { findMissingImages } = await import("./export");
+      const missing = await findMissingImages(
+        doc.source,
+        { baseDir: dirOf(doc.path), resolveWiki },
+        (path) => invoke<boolean>("path_exists", { path }),
+      ).catch(() => [] as string[]);
+      if (missing.length === 0) return;
+      const shown = missing.slice(0, 8).map((m) => `• ${m}`);
+      if (missing.length > 8) shown.push(`…and ${missing.length - 8} more`);
+      await message(
+        `${missing.length === 1 ? "This image" : "These images"} could not be found and will be missing from the export:\n\n${shown.join("\n")}`,
+        { title: "Missing images", kind: "warning" },
+      );
+    },
+    [resolveWiki],
+  );
+
   const exportAs = useCallback(
     async (kind: ExportKind) => {
       const doc = getActive();
       const src = doc.source;
       const name = basename(doc.path).replace(/\.[^.]+$/, "") || "document";
 
+      if (kind === "pdf" || kind === "docx" || kind === "html") {
+        await warnMissingImages(doc);
+      }
+
       if (kind === "pdf") {
         setCompare(null);
         setMode("preview");
-        // Let the preview paint, then print with print-only CSS (page breaks on hr).
-        setTimeout(() => window.print(), 80);
+        // Print once diagrams, embeds, images and fonts have finished, with
+        // print-only CSS (page breaks on hr).
+        const { waitForPrintReady } = await import("./printReady");
+        await waitForPrintReady(() => contentRef.current?.querySelector(".markdown-body") ?? null);
+        window.print();
         return;
       }
       if (kind === "docx") {
@@ -556,7 +602,7 @@ function App() {
         });
         if (!chosen) return;
         const { markdownToDocxBase64 } = await import("./export");
-        const data = await markdownToDocxBase64(src);
+        const data = await markdownToDocxBase64(src, await exportContextFor(doc));
         await invoke("write_file_base64", { path: chosen, data });
         return;
       }
@@ -568,7 +614,7 @@ function App() {
         if (kind === "html")
           contents = ex.htmlDocument(
             basename(doc.path),
-            ex.markdownToHtml(src),
+            await ex.markdownToHtml(src, await exportContextFor(doc)),
           );
         else contents = JSON.stringify(ex.markdownToAst(src), null, 2);
       }
@@ -580,7 +626,7 @@ function App() {
       if (!chosen) return;
       await invoke("write_file", { path: chosen, contents });
     },
-    [getActive],
+    [getActive, exportContextFor, warnMissingImages],
   );
 
   const exportPandoc = useCallback(
@@ -592,8 +638,13 @@ function App() {
         filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
       });
       if (!chosen) return;
+      await warnMissingImages(doc);
       try {
-        await invoke("export_pandoc", { src: doc.source, outPath: chosen });
+        await invoke("export_pandoc", {
+          src: doc.source,
+          outPath: chosen,
+          docPath: doc.path ?? null,
+        });
       } catch (e) {
         await message(`Pandoc could not produce that file.\n\n${e}`, {
           title: "Export failed",
@@ -601,25 +652,30 @@ function App() {
         });
       }
     },
-    [getActive],
+    [getActive, warnMissingImages],
   );
 
   const copyAsHtml = useCallback(async () => {
-    const { markdownToHtml } = await import("./export");
-    const html = markdownToHtml(getActive().source);
+    const doc = getActive();
+    // Rendering is async (diagrams, inlined images). Handing ClipboardItem a
+    // promise starts the write immediately, so WebKit's user-activation
+    // window doesn't lapse while the HTML is still being produced.
+    const htmlPromise = Promise.all([import("./export"), exportContextFor(doc)]).then(
+      ([ex, ctx]) => ex.markdownToHtml(doc.source, ctx),
+    );
     try {
       if (navigator.clipboard && "write" in navigator.clipboard) {
+        const blob = (type: string) =>
+          htmlPromise.then((html) => new Blob([html], { type }));
         await navigator.clipboard.write([
-          new ClipboardItem({
-            "text/html": new Blob([html], { type: "text/html" }),
-            "text/plain": new Blob([html], { type: "text/plain" }),
-          }),
+          new ClipboardItem({ "text/html": blob("text/html"), "text/plain": blob("text/plain") }),
         ]);
         return;
       }
     } catch {
       /* fall through */
     }
+    const html = await htmlPromise;
     const holder = document.createElement("div");
     holder.innerHTML = html;
     holder.setAttribute("contenteditable", "true");
@@ -638,7 +694,7 @@ function App() {
     }
     sel?.removeAllRanges();
     document.body.removeChild(holder);
-  }, [getActive]);
+  }, [getActive, exportContextFor]);
 
   // ----- Image attachments -----
   const attachImage = useCallback(
