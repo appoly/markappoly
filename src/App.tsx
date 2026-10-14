@@ -325,10 +325,11 @@ function App() {
   // Files the OS asks us to open (Finder, "Open With", the command line) wait
   // behind the session restore so the requested file ends up on top of the
   // restored tabs and active, instead of buried by the restore's own selection.
+  // The `markappoly` command can also pass a folder, or a file with a
+  // `#heading` fragment, which openPath receives as-is.
+  const openRequestedRef = useRef<(path: string) => Promise<void>>(async () => {});
   const [openQueue] = useState(() =>
-    createOpenQueue(async (path) => {
-      await openPath(path);
-    }),
+    createOpenQueue((path) => openRequestedRef.current(path)),
   );
 
   const [lineTarget, setLineTarget] = useState<{
@@ -412,6 +413,12 @@ function App() {
       setFiles([]);
     }
   }, []);
+
+  openRequestedRef.current = async (path) => {
+    const isDir = await invoke<boolean>("path_is_dir", { path }).catch(() => false);
+    if (isDir) await loadFolder(path);
+    else await openPath(path);
+  };
 
   const openFolder = useCallback(async () => {
     const dir = await open({ directory: true, multiple: false });
@@ -1377,11 +1384,8 @@ function App() {
   }, [handleMenu, openQueue]);
 
   useEffect(() => {
-    invoke<string | null>("cli_file_arg")
-      .then((p) => {
-        if (p) openQueue.request(p);
-      })
-      .catch(() => {});
+    // Launch arguments, forwarded launches and Finder opens that arrived
+    // before this listener existed.
     invoke<string[]>("take_pending_open")
       .then((paths) => paths.forEach((p) => openQueue.request(p)))
       .catch(() => {});

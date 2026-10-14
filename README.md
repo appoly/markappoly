@@ -101,6 +101,27 @@ For a walkthrough of every feature, see the **[user manual](https://github.com/a
 | Bold / Italic / Link | ⌘B / ⌘I / ⌘K | Zoom | ⌘+ / ⌘- / ⌘0 |
 | Settings | ⌘, | New tab / Close | ⌘T / ⌘W |
 
+## Command line
+
+Choose **Install Command Line Tool…** from the Markappoly menu to get a `markappoly` command, much like VS Code's `code`:
+
+```bash
+markappoly notes.md              # open a file
+markappoly a.md b.md             # open several files as tabs
+markappoly docs/                 # open a folder in the sidebar
+markappoly guide.md#install      # open a file at a heading
+claude -p "draft a plan" | markappoly   # show piped output, live as it streams
+markappoly - < draft.md          # read stdin explicitly
+markappoly --help
+```
+
+Paths are relative to the directory you run it from. If Markappoly is already open, the files open as tabs in the existing window instead of starting a second copy, and your prompt comes straight back. Piped text is saved to a temporary file (cleared after a week) that updates as more input arrives, so you can watch an agent's or a build's output form.
+
+Where it installs:
+- **macOS:** a link in `/usr/local/bin` to the script inside `Markappoly.app` (you'll be asked for your password unless that folder is already writable). If you decline, it goes in `~/.local/bin`. You can also link it yourself: `ln -s /Applications/Markappoly.app/Contents/Resources/cli/markappoly /usr/local/bin/markappoly`.
+- **Linux:** `~/.local/bin/markappoly`, pointing at the AppImage or installed binary.
+- **Windows:** `markappoly.cmd` in `%LOCALAPPDATA%\Markappoly\bin`, added to your user `PATH`. Open a new terminal afterwards.
+
 ## Build from source
 
 For contributors. You'll need **Node 18+**, **Rust** (via [rustup](https://rustup.rs)), and your platform's [Tauri prerequisites](https://tauri.app/start/prerequisites/).

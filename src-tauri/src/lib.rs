@@ -10,6 +10,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::menu::{AboutMetadata, Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+mod cli;
+
 // ---------- Live file watching (replaces mtime polling) ----------
 
 struct FileWatchState {
@@ -203,25 +205,56 @@ fn list_markdown_dir(path: String) -> Result<Vec<FileEntry>, String> {
     Ok(out)
 }
 
-/// A Markdown file passed on the command line (Windows/Linux "open with").
-#[tauri::command]
-fn cli_file_arg() -> Option<String> {
-    std::env::args().skip(1).find(|a| {
-        let p = Path::new(a);
-        p.is_file()
-            && p.extension()
-                .and_then(|e| e.to_str())
-                .map(|e| MD_EXTS.contains(&e.to_lowercase().as_str()))
-                .unwrap_or(false)
-    })
-}
-
-/// Files macOS asked us to open (Finder double-click / "open with") via the
-/// `Opened` event. On a cold launch that event fires before the webview has
-/// registered its listener, so the path is buffered here and drained by the
+/// Files and folders to open that arrived from outside the app: launch
+/// arguments (Windows/Linux "open with", the `markappoly` command), a second
+/// launch forwarded by the single-instance plugin, and macOS `Opened` events
+/// (Finder double-click). On a cold launch these arrive before the webview has
+/// registered its listener, so they are buffered here and drained by the
 /// frontend on startup instead of being lost to the race.
 #[derive(Default)]
 struct PendingOpen(Mutex<Vec<String>>);
+
+/// Buffer paths for the startup drain AND emit them for a window that is
+/// already up. The frontend de-dupes, so either or both landing is fine.
+fn request_open(app: &AppHandle, paths: Vec<String>) {
+    if paths.is_empty() {
+        return;
+    }
+    app.state::<PendingOpen>()
+        .0
+        .lock()
+        .unwrap()
+        .extend(paths.iter().cloned());
+    for p in paths {
+        let _ = app.emit("open-file", p);
+    }
+}
+
+/// "Install Command Line Tool…": install the `markappoly` command and report
+/// the outcome in a native dialog. Runs off the main thread because the macOS
+/// path may wait on an administrator password prompt.
+fn install_cli(app: AppHandle) {
+    std::thread::spawn(move || {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+        let (kind, text) = match cli::install() {
+            Ok(msg) => (MessageDialogKind::Info, msg),
+            Err(msg) => (MessageDialogKind::Error, msg),
+        };
+        app.dialog()
+            .message(text)
+            .title("Command Line Tool")
+            .kind(kind)
+            .show(|_| {});
+    });
+}
+
+fn focus_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
 
 #[tauri::command]
 fn take_pending_open(state: tauri::State<PendingOpen>) -> Vec<String> {
@@ -967,6 +1000,7 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>, recents: &[String]) -> tauri::
                 .accelerator("CmdOrCtrl+,")
                 .build(app)?,
         )
+        .item(&MenuItemBuilder::with_id("install_cli", "Install Command Line Tool…").build(app)?)
         .separator()
         .hide()
         .quit()
@@ -1099,7 +1133,26 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>, recents: &[String]) -> tauri::
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default()
+    // `markappoly …` runs this binary as a short-lived launcher first.
+    if let Some(code) = cli::run_launcher_if_requested() {
+        std::process::exit(code);
+    }
+
+    let mut builder = tauri::Builder::default();
+
+    // Must be registered before any other plugin. A second launch (the
+    // `markappoly` command, or "open with" on Windows/Linux) hands its
+    // arguments to this instance and exits.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            let targets = cli::launch_targets(args.get(1..).unwrap_or_default(), Path::new(&cwd));
+            request_open(app, targets);
+            focus_main_window(app);
+        }));
+    }
+
+    builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build());
@@ -1115,6 +1168,10 @@ pub fn run() {
         .manage(PendingOpen::default())
         .manage(FileWatchState::default())
         .on_menu_event(|app, event| {
+            if event.id().0 == "install_cli" {
+                install_cli(app.clone());
+                return;
+            }
             let _ = app.emit("menu", event.id().0.clone());
         })
         .setup(|app| {
@@ -1122,6 +1179,17 @@ pub fn run() {
             let recents = load_recents(&handle);
             let menu = build_app_menu(&handle, &recents)?;
             handle.set_menu(menu)?;
+
+            // Paths passed on the command line at a cold start.
+            let cwd = std::env::current_dir().unwrap_or_default();
+            let args: Vec<String> = std::env::args().skip(1).collect();
+            let targets = cli::launch_targets(&args, &cwd);
+            if !targets.is_empty() {
+                request_open(&handle, targets);
+                // Launched from a terminal, the app would otherwise start
+                // behind it.
+                focus_main_window(&handle);
+            }
 
             // Native window chrome per platform.
             #[cfg(target_os = "macos")]
@@ -1152,7 +1220,6 @@ pub fn run() {
             file_mtime,
             list_markdown_dir,
             index_dir,
-            cli_file_arg,
             take_pending_open,
             search_dir,
             replace_in_dir,
@@ -1179,17 +1246,12 @@ pub fn run() {
         // macOS delivers "open with" / Finder double-clicks as Opened events.
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Opened { urls } = &event {
-            let pending = app_handle.state::<PendingOpen>();
-            for url in urls {
-                if let Ok(path) = url.to_file_path() {
-                    let p = path.to_string_lossy().to_string();
-                    // Buffer it for the cold-start drain AND emit for a window
-                    // that is already up. openPath de-dupes, so either or both
-                    // firing is fine.
-                    pending.0.lock().unwrap().push(p.clone());
-                    let _ = app_handle.emit("open-file", p);
-                }
-            }
+            let paths = urls
+                .iter()
+                .filter_map(|url| url.to_file_path().ok())
+                .map(|p| p.to_string_lossy().to_string())
+                .collect();
+            request_open(app_handle, paths);
         }
         #[cfg(not(target_os = "macos"))]
         {
