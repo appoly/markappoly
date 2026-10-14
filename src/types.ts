@@ -9,6 +9,11 @@ export type Doc = {
   mtime: number | null;
   saveStatus?: "idle" | "saving" | "error" | "conflict";
   saveError?: string;
+  /**
+   * The version the reader last acknowledged, while the file holds changes
+   * made elsewhere (an agent, another editor) that haven't been reviewed.
+   */
+  reviewBase?: string;
 };
 
 export function makeDoc(partial: Partial<Doc> = {}): Doc {

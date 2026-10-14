@@ -597,6 +597,60 @@ fn list_snapshots(app: AppHandle, path: String) -> Vec<Snapshot> {
         .collect()
 }
 
+// ---------- Change review: the version the reader last saw ----------
+
+const SEEN_MAX_BYTES: usize = 4 * 1024 * 1024;
+const SEEN_KEEP: usize = 2000;
+
+fn seen_file_for<R: Runtime>(app: &AppHandle<R>, path: &str) -> Option<PathBuf> {
+    let key = path_key(Path::new(path));
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("seen").join(format!("{:016x}.md", fnv1a(&key))))
+}
+
+/// The contents of `path` as the reader last acknowledged them, if recorded.
+#[tauri::command]
+fn seen_get(app: AppHandle, path: String) -> Option<String> {
+    fs::read_to_string(seen_file_for(&app, &path)?).ok()
+}
+
+/// Record `contents` as the version of `path` the reader has seen. Very large
+/// files are skipped, and the store keeps only the most recently seen files.
+#[tauri::command]
+fn seen_set(app: AppHandle, path: String, contents: String) -> Result<(), String> {
+    let Some(file) = seen_file_for(&app, &path) else {
+        return Ok(());
+    };
+    if contents.len() > SEEN_MAX_BYTES {
+        let _ = fs::remove_file(&file);
+        return Ok(());
+    }
+    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(&file, contents).map_err(|e| e.to_string())?;
+    prune_seen(&dir);
+    Ok(())
+}
+
+fn prune_seen(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<(SystemTime, PathBuf)> = entries
+        .flatten()
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .collect();
+    if files.len() <= SEEN_KEEP {
+        return;
+    }
+    files.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, p) in files.iter().skip(SEEN_KEEP) {
+        let _ = fs::remove_file(p);
+    }
+}
+
 // ---------- Folder-wide replace ----------
 
 #[derive(Serialize)]
@@ -1053,7 +1107,9 @@ pub fn run() {
             clear_recents,
             set_watched_files,
             path_exists,
-            path_is_dir
+            path_is_dir,
+            seen_get,
+            seen_set
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

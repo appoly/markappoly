@@ -19,6 +19,7 @@ const LINE_SPACING_KEY = "mv.lineSpacing";
 const CUSTOM_CSS_KEY = "mv.customCss";
 const BLOCK_REMOTE_IMG_KEY = "mv.blockRemoteImages";
 const BOOKMARKS_KEY = "mv.bookmarks";
+const TRACK_CHANGES_KEY = "mv.trackChanges";
 const AUTOSAVE_KEY = "mv.autosave";
 const TEMPLATES_FOLDER_KEY = "mv.templatesFolder";
 const DAILY_FOLDER_KEY = "mv.dailyFolder";
@@ -69,6 +70,7 @@ export function usePreferences() {
     load(BLOCK_REMOTE_IMG_KEY, false),
   );
   const [bookmarks, setBookmarks] = useState<string[]>(() => load(BOOKMARKS_KEY, []));
+  const [trackChanges, setTrackChanges] = useState<boolean>(() => load(TRACK_CHANGES_KEY, true));
   const [autosave, setAutosave] = useState<boolean>(() => load(AUTOSAVE_KEY, false));
   const [templatesFolder, setTemplatesFolder] = useState<string>(() =>
     load(TEMPLATES_FOLDER_KEY, "Templates"),
@@ -144,6 +146,9 @@ export function usePreferences() {
     localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bookmarks));
   }, [bookmarks]);
   useEffect(() => {
+    localStorage.setItem(TRACK_CHANGES_KEY, JSON.stringify(trackChanges));
+  }, [trackChanges]);
+  useEffect(() => {
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(autosave));
   }, [autosave]);
   useEffect(() => {
@@ -204,6 +209,8 @@ export function usePreferences() {
     setCustomCss,
     blockRemoteImages,
     setBlockRemoteImages,
+    trackChanges,
+    setTrackChanges,
     bookmarks,
     toggleBookmark,
     autosave,

@@ -2297,3 +2297,263 @@ button.primary-action {
 
 .native-modal .icon-btn { border: 1px solid transparent; background: transparent; color: var(--text); cursor: pointer; }
 .native-modal .icon-btn:hover { background: var(--code-bg); }
+
+/* ---------- Change review & comments ---------- */
+:root {
+  --review-added-bg: rgba(46, 160, 67, 0.1);
+  --review-added-bar: #2ea043;
+  --review-changed-bg: rgba(212, 152, 25, 0.12);
+  --review-changed-bar: #c98a12;
+  --review-removed: #d1242f;
+  --review-comment: rgba(255, 196, 0, 0.32);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --review-added-bg: rgba(63, 185, 80, 0.14);
+    --review-added-bar: #3fb950;
+    --review-changed-bg: rgba(210, 153, 34, 0.16);
+    --review-changed-bar: #d29922;
+    --review-removed: #f85149;
+    --review-comment: rgba(255, 196, 0, 0.26);
+  }
+}
+:root[data-theme="dark"] {
+  --review-added-bg: rgba(63, 185, 80, 0.14);
+  --review-added-bar: #3fb950;
+  --review-changed-bg: rgba(210, 153, 34, 0.16);
+  --review-changed-bar: #d29922;
+  --review-removed: #f85149;
+  --review-comment: rgba(255, 196, 0, 0.26);
+}
+
+/* Changed blocks get a tinted band that bleeds into the margin plus a bar on
+   the left edge, drawn with shadows so nothing in the layout moves. */
+.markdown-body > [data-review="added"] {
+  background-color: var(--review-added-bg);
+  box-shadow:
+    -10px 0 0 0 var(--review-added-bg),
+    -13px 0 0 0 var(--review-added-bar),
+    10px 0 0 0 var(--review-added-bg);
+}
+.markdown-body > [data-review="changed"] {
+  background-color: var(--review-changed-bg);
+  box-shadow:
+    -10px 0 0 0 var(--review-changed-bg),
+    -13px 0 0 0 var(--review-changed-bar),
+    10px 0 0 0 var(--review-changed-bg);
+}
+/* Something was deleted just above (or, at the end, below) this block. */
+.markdown-body > [data-review-removed="above"] {
+  box-shadow: 0 -8px 0 -6px var(--review-removed);
+}
+.markdown-body > [data-review-removed="below"] {
+  box-shadow: 0 8px 0 -6px var(--review-removed);
+}
+.markdown-body > [data-review="added"][data-review-removed="above"] {
+  box-shadow:
+    -10px 0 0 0 var(--review-added-bg),
+    -13px 0 0 0 var(--review-added-bar),
+    10px 0 0 0 var(--review-added-bg),
+    0 -8px 0 -6px var(--review-removed);
+}
+.markdown-body > [data-review="changed"][data-review-removed="above"] {
+  box-shadow:
+    -10px 0 0 0 var(--review-changed-bg),
+    -13px 0 0 0 var(--review-changed-bar),
+    10px 0 0 0 var(--review-changed-bg),
+    0 -8px 0 -6px var(--review-removed);
+}
+.markdown-body > [data-review-focus] {
+  animation: review-focus 1.2s ease-out;
+}
+@keyframes review-focus {
+  0%,
+  35% {
+    outline: 2px solid var(--accent);
+    outline-offset: 6px;
+  }
+  100% {
+    outline: 2px solid transparent;
+    outline-offset: 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .markdown-body > [data-review-focus] {
+    animation: none;
+    outline: 2px solid var(--accent);
+    outline-offset: 6px;
+  }
+}
+
+.markdown-body > [data-comment] {
+  position: relative;
+}
+.markdown-body > [data-comment]::after {
+  content: "";
+  position: absolute;
+  top: 0.45em;
+  right: -20px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--review-changed-bar);
+}
+::highlight(review-comment) {
+  background-color: var(--review-comment);
+}
+
+.review-bar {
+  font-size: 12px;
+}
+.review-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--review-changed-bar);
+  flex: 0 0 auto;
+}
+.review-summary {
+  margin-right: 6px;
+}
+.review-position {
+  color: var(--text-muted);
+  margin-left: 4px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.format-bar .fmt.review-done {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+.format-bar .fmt[aria-pressed="true"] {
+  background: var(--panel-strong);
+}
+.review-comments {
+  width: 340px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.review-comments ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.review-comments li {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  border-radius: 6px;
+}
+.review-comments li:hover {
+  background: var(--code-bg);
+}
+.review-comment-jump {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 8px;
+  text-align: left;
+  font-size: 12.5px;
+  min-width: 0;
+}
+.review-comment-jump q {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.review-comment-jump span {
+  white-space: pre-wrap;
+}
+.review-comment-jump em {
+  color: var(--review-removed);
+  font-style: normal;
+  font-size: 11.5px;
+}
+.review-comments li.outdated q {
+  text-decoration: line-through;
+}
+.review-comments li .link-btn {
+  padding: 7px 8px;
+}
+.review-comments-foot {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--hairline);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.comment-composer {
+  position: fixed;
+  z-index: 60;
+  background: var(--modal-bg);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  font-size: 13px;
+}
+.comment-composer-open {
+  padding: 5px 11px;
+  font-weight: 500;
+}
+.comment-composer.writing {
+  padding: 8px;
+  width: 300px;
+}
+.comment-composer textarea {
+  width: 100%;
+  height: 84px;
+  resize: vertical;
+  font: inherit;
+  color: var(--text);
+  background: var(--reading-bg);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+.comment-composer textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.comment-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.comment-composer-actions span {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.comment-composer-actions button.primary-action {
+  padding: 4px 12px;
+  border-radius: 6px;
+}
+
+@media print {
+  .markdown-body > [data-review],
+  .markdown-body > [data-review-removed] {
+    background: none !important;
+    box-shadow: none !important;
+  }
+  .markdown-body > [data-comment]::after {
+    display: none;
+  }
+}
+.outline-changed {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--review-changed-bar);
+  vertical-align: middle;
+}

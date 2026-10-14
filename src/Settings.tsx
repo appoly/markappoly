@@ -171,6 +171,15 @@ export function Settings({
               ]}
             />
           </Row>
+          <Row
+            label="Highlight outside changes"
+            hint="Show what changed since you last read a file"
+          >
+            <Toggle
+              checked={prefs.trackChanges}
+              onChange={prefs.setTrackChanges}
+            />
+          </Row>
         </section>
 
         <section className="set-section">

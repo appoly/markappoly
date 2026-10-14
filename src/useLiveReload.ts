@@ -5,15 +5,20 @@ import type { Doc } from "./types";
 
 /**
  * Watch open on-disk files via the Rust `notify` watcher. When a file changes
- * externally and the matching tab is clean, reload its contents.
+ * externally and the matching tab is clean, reload its contents. With change
+ * tracking on, the text it replaced becomes the review baseline (kept across
+ * successive writes until the reader marks the changes as reviewed).
  */
 export function useLiveReload(
   docs: Doc[],
   patchDocById: (id: string, patch: Partial<Doc>) => void,
   docsRef: React.RefObject<Doc[]>,
+  trackChanges: boolean,
 ) {
   const patchRef = useRef(patchDocById);
   patchRef.current = patchDocById;
+  const trackRef = useRef(trackChanges);
+  trackRef.current = trackChanges;
 
   // Keep the native watcher in sync with open paths only (not every keystroke).
   const pathsKey = docs
@@ -57,8 +62,11 @@ export function useLiveReload(
         // A user may start typing while the disk read is in flight.
         const latest = docsRef.current?.find((d) => d.id === cur.id);
         if (!latest || latest.dirty || latest.source !== cur.source) return;
+        const base =
+          latest.reviewBase ?? (trackRef.current ? latest.source : undefined);
         patchRef.current(cur.id, {
           source: text,
+          reviewBase: base === text ? undefined : base,
           dirty: false,
           mtime,
           saveStatus: "idle",

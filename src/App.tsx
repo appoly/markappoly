@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -52,6 +53,22 @@ import { createDocumentSaver } from "./saveDocument";
 import type { EditorSession } from "./editorSession";
 import { WELCOME } from "./welcome";
 import { toggleTaskAtLine } from "./tasks";
+import {
+  changedSections,
+  describeChanges,
+  diffLines,
+  formatFeedback,
+  relocateComment,
+  sectionFor,
+} from "./review";
+import {
+  clearCommentHighlights,
+  clearReviewMarks,
+  lineForNode,
+  markChanges,
+  markComments,
+} from "./reviewDom";
+import { CommentComposer, ReviewBar, useComments } from "./ReviewBar";
 import "./App.css";
 
 // The editor (CodeMirror), diff, graph, and history views load on demand so a
@@ -214,7 +231,31 @@ function App() {
     setDocs(next);
   }, []);
 
-  useLiveReload(docs, patchDocById, docsRef);
+  useLiveReload(docs, patchDocById, docsRef, prefs.trackChanges);
+
+  // ----- Change review: remember what the reader has seen -----
+  const trackChangesRef = useRef(prefs.trackChanges);
+  trackChangesRef.current = prefs.trackChanges;
+  const seenWritten = useRef(new Map<string, string>());
+  useEffect(() => {
+    // A clean tab with nothing left to review is, by definition, what the
+    // reader has seen: first opens, their own saves, and "mark as reviewed".
+    for (const d of docs) {
+      if (!d.path || d.dirty || d.reviewBase !== undefined) continue;
+      if (d.saveStatus && d.saveStatus !== "idle") continue;
+      if (seenWritten.current.get(d.path) === d.source) continue;
+      seenWritten.current.set(d.path, d.source);
+      invoke("seen_set", { path: d.path, contents: d.source }).catch(() => {});
+    }
+  }, [docs]);
+  useEffect(() => {
+    if (prefs.trackChanges) return;
+    if (!docsRef.current.some((d) => d.reviewBase !== undefined)) return;
+    docsRef.current = docsRef.current.map((d) =>
+      d.reviewBase === undefined ? d : { ...d, reviewBase: undefined },
+    );
+    setDocs(docsRef.current);
+  }, [prefs.trackChanges]);
 
   // ----- Tabs -----
   const selectTab = useCallback(
@@ -251,7 +292,15 @@ function App() {
         } catch {
           /* ignore */
         }
-        const doc = makeDoc({ path, source: text, dirty: false, mtime });
+        let reviewBase: string | undefined;
+        if (trackChangesRef.current) {
+          const seen = await invoke<string | null>("seen_get", { path }).catch(
+            () => null,
+          );
+          if (seen === text) seenWritten.current.set(path, text);
+          else if (seen != null) reviewBase = seen;
+        }
+        const doc = makeDoc({ path, source: text, dirty: false, mtime, reviewBase });
         const current = docsRef.current;
         const onlyWelcome =
           current.length === 1 &&
@@ -1415,6 +1464,128 @@ function App() {
     { id: "theme_dark", label: "Theme: Dark" },
   ];
 
+  // ----- Change review and comments -----
+  const reviewBase = active.reviewBase;
+  const hunks = useMemo(
+    () => (reviewBase === undefined ? [] : diffLines(reviewBase, source)),
+    [reviewBase, source],
+  );
+  const reviewSections = useMemo(
+    () => changedSections(headings, hunks),
+    [headings, hunks],
+  );
+  const changedSlugSet = useMemo(
+    () => new Set(reviewSections.map((h) => h.slug)),
+    [reviewSections],
+  );
+  const [reviewDiff, setReviewDiff] = useState(false);
+  const [reviewIndex, setReviewIndex] = useState(-1);
+  useEffect(() => {
+    setReviewIndex(-1);
+    if (!hunks.length) setReviewDiff(false);
+  }, [active.id, hunks]);
+  const [comments, setComments] = useComments(filePath ?? `doc:${active.id}`);
+  const placedComments = useMemo(
+    () => comments.map((c) => ({ ...c, at: relocateComment(source, c) })),
+    [comments, source],
+  );
+  const reviewing = !!hunks.length || comments.length > 0;
+  const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null);
+  const changeTargets = useRef<(HTMLElement | null)[]>([]);
+  const commentAnchors = useRef(new Map<string, HTMLElement>());
+  const showingPreview = mode === "preview" && !compare && !reviewDiff;
+  useLayoutEffect(() => {
+    if (!bodyEl || !showingPreview) return;
+    clearReviewMarks(bodyEl);
+    changeTargets.current = markChanges(bodyEl, hunks);
+    commentAnchors.current = markComments(bodyEl, placedComments);
+    return () => clearCommentHighlights();
+  }, [bodyEl, showingPreview, hunks, placedComments, source]);
+
+  const flash = (el: HTMLElement | null | undefined) => {
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.dataset.reviewFocus = "1";
+    window.setTimeout(() => delete el.dataset.reviewFocus, 1400);
+  };
+  const stepChange = useCallback(
+    (delta: number) => {
+      if (!hunks.length) return;
+      if (reviewDiff) setReviewDiff(false);
+      const next = (reviewIndex + delta + hunks.length) % hunks.length;
+      setReviewIndex(next);
+      requestAnimationFrame(() => flash(changeTargets.current[next]));
+    },
+    [hunks.length, reviewIndex, reviewDiff],
+  );
+  const markReviewed = useCallback(() => {
+    patchDocById(activeIdRef.current, { reviewBase: undefined });
+    setReviewDiff(false);
+  }, [patchDocById]);
+  const copyFeedback = useCallback(async () => {
+    const text = formatFeedback({
+      path: filePath,
+      name: docName(active),
+      comments: placedComments.map((c) => ({ ...c, line: c.at > 0 ? c.at : c.line })),
+      headings,
+    });
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice(
+        `Copied ${comments.length} comment${comments.length === 1 ? "" : "s"} as Markdown feedback.`,
+      );
+    } catch (error) {
+      setNotice(`Could not copy feedback. ${String(error)}`);
+    }
+  }, [filePath, active, placedComments, headings, comments.length]);
+  const addComment = useCallback(
+    (c: { line: number; quote: string; text: string }) =>
+      setComments([
+        ...comments,
+        { id: crypto.randomUUID(), created: Date.now(), ...c },
+      ]),
+    [comments, setComments],
+  );
+  const lineForSelection = useCallback(
+    (sel: Selection) => (bodyEl ? lineForNode(bodyEl, sel.anchorNode) : null),
+    [bodyEl],
+  );
+  useEffect(() => {
+    if (!hunks.length) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F7" || document.querySelector("dialog[open]")) return;
+      e.preventDefault();
+      stepChange(e.shiftKey ? -1 : 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hunks.length, stepChange]);
+
+  const reviewPosition =
+    reviewIndex >= 0 && hunks[reviewIndex]
+      ? (() => {
+          const s = sectionFor(headings, Math.max(1, hunks[reviewIndex].start));
+          return `${reviewIndex + 1} of ${hunks.length}${s ? ` · ${s.text}` : ""}`;
+        })()
+      : null;
+  const reviewBar =
+    reviewing && mode === "preview" ? (
+      <ReviewBar
+        summary={hunks.length ? describeChanges(hunks, reviewSections.length) : null}
+        position={reviewPosition}
+        onPrev={() => stepChange(-1)}
+        onNext={() => stepChange(1)}
+        diffOpen={reviewDiff}
+        onToggleDiff={() => setReviewDiff((v) => !v)}
+        onMarkReviewed={markReviewed}
+        comments={placedComments}
+        onJumpComment={(id) => flash(commentAnchors.current.get(id))}
+        onDeleteComment={(id) => setComments(comments.filter((c) => c.id !== id))}
+        onCopyFeedback={copyFeedback}
+        onClearComments={() => setComments([])}
+      />
+    ) : null;
+
   const tabs = docs.map((d) => ({
     id: d.id,
     name: docName(d),
@@ -1616,6 +1787,7 @@ function App() {
             headings={source === WELCOME && !filePath ? [] : headings}
             onGotoHeading={gotoHeading}
             activeHeadingSlug={activeHeadingSlug}
+            changedSlugs={changedSlugSet}
             query={searchQuery}
             onQueryChange={setSearchQuery}
             bookmarks={prefs.bookmarks}
@@ -1667,8 +1839,10 @@ function App() {
                 Close compare
               </button>
             </div>
+          ) : !editing ? (
+            reviewBar
           ) : (
-            editing && (
+            (
               <div className="format-bar">
                 <button
                   className="fmt fmt-b"
@@ -1812,8 +1986,12 @@ function App() {
                     dark={prefs.dark}
                   />
                 </Suspense>
+              ) : reviewDiff && reviewBase !== undefined && mode === "preview" ? (
+                <Suspense fallback={<div className="lazy-fallback" />}>
+                  <DiffView a={reviewBase} b={source} dark={prefs.dark} />
+                </Suspense>
               ) : mode === "preview" ? (
-                <div className="markdown-body">
+                <div className="markdown-body" ref={setBodyEl}>
                   {source === WELCOME && !filePath && (
                     <section className="welcome-actions" aria-label="Get started">
                       <h1>Open a document. Settle into reading.</h1>
@@ -1875,6 +2053,13 @@ function App() {
                       onTagClick={onTagClick}
                     />
                   )}
+                  {filePath !== null || source !== WELCOME ? (
+                    <CommentComposer
+                      root={bodyEl}
+                      lineForSelection={lineForSelection}
+                      onAdd={addComment}
+                    />
+                  ) : null}
                 </div>
               ) : mode === "split" ? (
                 <Suspense fallback={<div className="lazy-fallback" />}>

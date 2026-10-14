@@ -111,6 +111,7 @@ export function Sidebar({
   headings,
   onGotoHeading,
   activeHeadingSlug,
+  changedSlugs,
   query,
   onQueryChange,
   bookmarks,
@@ -129,6 +130,8 @@ export function Sidebar({
   headings: Heading[];
   onGotoHeading: (h: Heading) => void;
   activeHeadingSlug?: string | null;
+  /** Sections holding changes the reader hasn't reviewed yet. */
+  changedSlugs?: Set<string>;
   query: string;
   onQueryChange: (q: string) => void;
   bookmarks: string[];
@@ -344,9 +347,14 @@ export function Sidebar({
                           : "")
                       }
                       onClick={() => onGotoHeading(h)}
-                      title={h.text}
+                      title={
+                        changedSlugs?.has(h.slug) ? `${h.text} (changed)` : h.text
+                      }
                     >
                       {h.text || "(untitled)"}
+                      {changedSlugs?.has(h.slug) && (
+                        <span className="outline-changed" aria-label="changed" />
+                      )}
                     </button>
                   </li>
                 ))}
