@@ -41,6 +41,14 @@ npm run tauri build
 
 Tauri signs the `.app`, staples the notarization ticket, and produces a `.dmg`. The `tauri.conf.json` `bundle.macOS` block can pin `minimumSystemVersion` and an entitlements file if you add capabilities (e.g. hardened runtime exceptions).
 
+### Quick Look extension
+
+The `.app` embeds a Quick Look preview extension (`Contents/PlugIns/MarkappolyQuickLook.appex`, macOS 13+) so pressing Space on a `.md` in Finder shows it rendered. Sources live in `quicklook/`: a Swift `QLPreviewProvider` that runs marked plus `render.js` in JavaScriptCore and returns sandboxed HTML.
+
+`tauri.macos.conf.json` runs `scripts/build-quicklook.mjs` as the `beforeBundleCommand` and copies the result in via `bundle.macOS.files`. Tauri's bundler signs the outer app without `--deep` and never signs those copied files, so the script signs the extension itself first (sandbox entitlement, hardened runtime, secure timestamp) using the same `APPLE_CERTIFICATE` / `APPLE_SIGNING_IDENTITY` env vars. With no identity it ad-hoc signs, which is fine for local builds. It builds only the slice for the target being bundled (`TAURI_ENV_TARGET_TRIPLE`) and needs nothing beyond the Command Line Tools' `swiftc`.
+
+To check the renderer without bundling: `node scripts/build-quicklook.mjs --harness`, then `src-tauri/target/quicklook/harness src-tauri/target/quicklook/MarkappolyQuickLook.appex/Contents/Resources file.md`. To try the extension, install the built app in `/Applications`, run `qlmanage -r`, and press Space on a Markdown file; `pluginkit -m -p com.apple.quicklook.preview | grep appoly` shows whether it registered.
+
 ## 3. Windows / Linux
 
 - **Windows**: set `WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD` (a base64 PFX) to authenticode-sign the `.msi`/`.exe`. The acrylic window effect is applied at runtime; no extra config.
