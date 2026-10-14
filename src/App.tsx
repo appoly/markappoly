@@ -870,10 +870,13 @@ function App() {
       if (!chosen) return;
       await warnMissingImages(doc);
       try {
+        const { markdownForPandoc } = await import("./export");
+        const input = await markdownForPandoc(doc.source, await exportContextFor(doc));
         await invoke("export_pandoc", {
-          src: doc.source,
+          src: input.markdown,
           outPath: chosen,
           docPath: doc.path ?? null,
+          files: input.files,
         });
       } catch (e) {
         await message(`Pandoc could not produce that file.\n\n${e}`, {
@@ -882,7 +885,7 @@ function App() {
         });
       }
     },
-    [getActive, warnMissingImages],
+    [getActive, warnMissingImages, exportContextFor],
   );
 
   const copyAsHtml = useCallback(async () => {

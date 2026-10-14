@@ -13,6 +13,9 @@ import { imagePlugin } from "remark-docx/plugins/image";
 import { latexPlugin } from "remark-docx/plugins/latex";
 import type { RemarkDocxPlugin } from "remark-docx";
 import { TextRun } from "docx";
+import remarkStringify from "remark-stringify";
+import remarkMath from "remark-math";
+import YAML from "yaml";
 import { remarkPluginsFor, sanitizeSchema, sliceSection } from "./renderPipeline";
 import { basename, dirOf, isAbsolutePath, resolveRelativePath } from "./paths";
 
@@ -35,6 +38,8 @@ export type ExportContext = {
   readBase64?: (path: string) => Promise<string>;
   /** Render Mermaid source to an SVG string. */
   renderMermaid?: (code: string, opts: { htmlLabels: boolean }) => Promise<string>;
+  /** Rasterize an SVG to PNG (base64). Defaults to a canvas in the webview. */
+  rasterizeSvg?: (svg: string) => Promise<string>;
 };
 
 const MAX_EMBED_DEPTH = 3;
@@ -584,4 +589,142 @@ export async function renderMermaidSvg(
   });
   const { svg } = await mermaid.render(`export-mermaid-${mermaidCounter++}`, code);
   return svg;
+}
+
+// ---------------------------------------------------------------------------
+// Pandoc
+// ---------------------------------------------------------------------------
+
+export type PandocInput = {
+  /** CommonMark with Pandoc extensions, read with `-f commonmark_x`. */
+  markdown: string;
+  /** Generated files (rendered diagrams) the Markdown refers to by name. */
+  files: { name: string; base64: string }[];
+};
+
+const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
+const PANDOC_ESCAPE = /[\\`*_[\]{}<>#|~$]/g;
+
+/**
+ * Turn a document into Markdown Pandoc reads the way the preview renders it:
+ * embeds inlined, wiki links as text, `==highlights==` as `[…]{.mark}`
+ * spans, callouts as quotes with a bold title, and Mermaid diagrams as PNG
+ * images (returned in `files`). Valid YAML frontmatter is kept as Pandoc
+ * metadata, so the title and author reach the output.
+ */
+export async function markdownForPandoc(md: string, ctx: ExportContext = {}): Promise<PandocInput> {
+  const fm = FRONTMATTER_RE.exec(md);
+  let metadata = "";
+  if (fm) {
+    const doc = YAML.parseDocument(fm[1]);
+    if (!doc.errors.length && YAML.isMap(doc.contents)) metadata = `---\n${fm[1]}\n---\n\n`;
+  }
+
+  const tree = parseTree(md, ctx);
+  await prepareTree(tree, ctx);
+  absolutizeImages(tree, ctx.baseDir);
+
+  const files: PandocInput["files"] = [];
+  if (ctx.renderMermaid) {
+    const rasterize = ctx.rasterizeSvg ?? (typeof document !== "undefined" ? svgToPngBase64 : null);
+    for (const node of mermaidNodes(tree)) {
+      try {
+        const svg = await ctx.renderMermaid(node.value, { htmlLabels: false });
+        const n = files.length + 1;
+        const file = rasterize
+          ? { name: `markappoly-diagram-${n}.png`, base64: await rasterize(svg) }
+          : { name: `markappoly-diagram-${n}.svg`, base64: utf8ToBase64(svg) };
+        files.push(file);
+        Object.assign(node, {
+          type: "paragraph",
+          children: [{ type: "image", url: file.name, alt: "Diagram" }],
+        });
+        delete node.lang;
+        delete node.value;
+      } catch {
+        /* keep the diagram source as a code block */
+      }
+    }
+  }
+
+  toPandocNodes(tree);
+  const body = String(
+    unified()
+      .use(remarkGfm)
+      .use(remarkMath)
+      .use(remarkStringify, { bullet: "-", fences: true, rule: "-" })
+      .stringify(tree),
+  );
+  return { markdown: metadata + body, files };
+}
+
+/** Rewrite the preview's custom nodes into plain mdast plus Pandoc syntax. */
+function toPandocNodes(tree: any) {
+  const plainText = (nodes: any[]): string =>
+    nodes.map((n) => (n.value ?? plainText(n.children ?? []))).join("");
+  const KNOWN = new Set([
+    "root", "paragraph", "heading", "thematicBreak", "blockquote", "list", "listItem",
+    "table", "tableRow", "tableCell", "html", "code", "definition", "footnoteDefinition",
+    "text", "emphasis", "strong", "delete", "inlineCode", "break", "link", "image",
+    "linkReference", "imageReference", "footnoteReference", "math", "inlineMath",
+  ]);
+  const walk = (parent: any) => {
+    if (!Array.isArray(parent.children)) return;
+    const out: any[] = [];
+    for (const child of parent.children) {
+      if (child.type === "wikiHighlight") {
+        const inner = plainText(child.children ?? []).replace(PANDOC_ESCAPE, "\\$&");
+        out.push({ type: "html", value: `[${inner}]{.mark}` });
+        continue;
+      }
+      if (child.type === "blockquote" && hasClass(child, "markdown-alert")) {
+        const title = child.children?.[0];
+        if (title && hasClass(title, "markdown-alert-title")) {
+          child.children[0] = {
+            type: "paragraph",
+            children: [{ type: "strong", children: [{ type: "text", value: plainText(title.children) }] }],
+          };
+        }
+      }
+      if (child.type === "image" && /^[a-zA-Z]:\\/.test(child.url)) {
+        // Windows paths: Pandoc accepts forward slashes, and backslashes
+        // would otherwise be read as Markdown escapes.
+        child.url = child.url.replace(/\\/g, "/");
+      }
+      if (!KNOWN.has(child.type)) {
+        // Tags, wiki-link text and anything else the preview adds: keep the words.
+        if (Array.isArray(child.children)) {
+          const wrapper = { children: child.children };
+          walk(wrapper);
+          out.push(...wrapper.children);
+        } else if (typeof child.value === "string") {
+          out.push({ type: "text", value: child.value });
+        }
+        continue;
+      }
+      walk(child);
+      out.push(child);
+    }
+    parent.children = out;
+  };
+  walk(tree);
+}
+
+/** Draw an SVG onto a canvas at 2× and return the PNG as base64. */
+async function svgToPngBase64(svg: string): Promise<string> {
+  const img = new Image();
+  img.src = `data:image/svg+xml;base64,${utf8ToBase64(svg)}`;
+  await img.decode();
+  const scale = 2;
+  const w = Math.max(1, Math.ceil((img.naturalWidth || 800) * scale));
+  const h = Math.max(1, Math.ceil((img.naturalHeight || 600) * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext("2d");
+  if (!g) throw new Error("No canvas");
+  g.fillStyle = "#ffffff";
+  g.fillRect(0, 0, w, h);
+  g.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL("image/png").split(",")[1];
 }

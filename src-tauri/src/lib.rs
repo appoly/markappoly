@@ -961,27 +961,54 @@ fn pandoc_available() -> bool {
 /// Pandoc runs from its folder with that folder on `--resource-path`, so
 /// relative image references resolve the way they do in the preview.
 #[tauri::command]
-fn export_pandoc(src: String, out_path: String, doc_path: Option<String>) -> Result<(), String> {
+fn export_pandoc(
+    src: String,
+    out_path: String,
+    doc_path: Option<String>,
+    files: Option<Vec<PandocFile>>,
+) -> Result<(), String> {
     let pandoc = find_pandoc().ok_or("Pandoc was not found on this system.")?;
-    // A private temp file (0600, unique name) rather than a predictable,
-    // world-readable path in the shared temp dir; it's removed on drop.
-    let mut tmp = tempfile::Builder::new()
+    // A private temp folder (0700, unique name) for the input and any
+    // generated diagrams, rather than predictable paths in the shared temp
+    // dir; it's removed on drop.
+    let work = tempfile::Builder::new()
         .prefix("markappoly-")
-        .suffix(".md")
-        .tempfile()
+        .tempdir()
         .map_err(|e| e.to_string())?;
-    use std::io::Write as _;
-    tmp.write_all(src.as_bytes()).map_err(|e| e.to_string())?;
+    let input = work.path().join("document.md");
+    fs::write(&input, src.as_bytes()).map_err(|e| e.to_string())?;
+    for f in files.unwrap_or_default() {
+        // Names come from the frontend: keep them to a bare file name.
+        let name = Path::new(&f.name)
+            .file_name()
+            .ok_or("Invalid file name")?
+            .to_owned();
+        let bytes = STANDARD.decode(f.base64).map_err(|e| e.to_string())?;
+        fs::write(work.path().join(name), bytes).map_err(|e| e.to_string())?;
+    }
 
     let doc_dir = doc_path
         .as_deref()
         .and_then(|p| Path::new(p).parent())
         .filter(|d| d.is_dir());
 
-    let mut cmd = std::process::Command::new(&pandoc);
-    cmd.arg(tmp.path()).arg("-f").arg("gfm").arg("-o").arg(&out_path);
+    // Generated files first, then the document's folder for its own images.
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    let mut resource_path = work.path().display().to_string();
     if let Some(dir) = doc_dir {
-        cmd.arg(format!("--resource-path={}", dir.display()));
+        resource_path = format!("{}{}{}", resource_path, sep, dir.display());
+    }
+
+    let mut cmd = std::process::Command::new(&pandoc);
+    // commonmark_x: CommonMark (what the app writes) plus Pandoc's extensions
+    // for math, task lists, footnotes, `[…]{.mark}` spans and YAML metadata.
+    cmd.arg(&input)
+        .arg("-f")
+        .arg("commonmark_x")
+        .arg("-o")
+        .arg(&out_path)
+        .arg(format!("--resource-path={}", resource_path));
+    if let Some(dir) = doc_dir {
         cmd.current_dir(dir);
     }
 
@@ -990,6 +1017,12 @@ fn export_pandoc(src: String, out_path: String, doc_path: Option<String>) -> Res
         Ok(out) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
         Err(e) => Err(e.to_string()),
     }
+}
+
+#[derive(serde::Deserialize)]
+struct PandocFile {
+    name: String,
+    base64: String,
 }
 
 // ---------- Recent files ----------
