@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="Markappoly" width="560" />
+  <img src="assets/icon.png" alt="Markappoly" width="128" />
 </p>
 
 <p align="center"><em>Pass Go, straight to preview.</em></p>

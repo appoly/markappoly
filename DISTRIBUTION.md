@@ -4,13 +4,19 @@ How to sign, notarize, build, and ship Markdown Viewer. The app config (`src-tau
 
 ## 1. App icon
 
-The icon set under `src-tauri/icons/` is generated from `app-icon.png` — a rounded square crop of the Markappoly logo (`assets/logo.png`):
+The icon artwork lives in `assets/icon.svg` (full-bleed tile, used for Windows, Linux, the README and the favicon) and `assets/icon-macos.svg` (the same tile on Apple's icon grid with a soft shadow, so it sits at the right size in the Dock). To regenerate:
 
 ```bash
-npm run tauri icon ./app-icon.png   # or point at any 1024×1024 PNG
+node -e 'const s=require("sharp");s("assets/icon.svg",{density:288}).resize(1024,1024).png().toFile("app-icon.png")'
+node -e 'const s=require("sharp");s("assets/icon-macos.svg",{density:288}).resize(1024,1024).png().toFile("/tmp/icon-macos.png")'
+npm run tauri icon ./app-icon.png                        # every platform size
+npx tauri icon /tmp/icon-macos.png -o /tmp/icon-macos    # then keep only its .icns
+cp /tmp/icon-macos/icon.icns src-tauri/icons/icon.icns
+node -e 'const s=require("sharp");s("assets/icon.svg",{density:144}).resize(256,256).png().toFile("assets/icon.png")'
+cp assets/icon.svg public/icon.svg
 ```
 
-This regenerates every platform size (`.icns`, `.ico`, PNGs) referenced in `tauri.conf.json`. Replace `app-icon.png` with new artwork and re-run to rebrand.
+`tauri icon` writes every size (`.icns`, `.ico`, PNGs) referenced in `tauri.conf.json`; the macOS `.icns` is then replaced with the gridded version.
 
 ## 2. macOS code signing + notarization (needs an Apple Developer account)
 
