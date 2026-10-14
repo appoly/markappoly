@@ -616,6 +616,40 @@ fn list_snapshots(app: AppHandle, path: String) -> Vec<Snapshot> {
         .collect()
 }
 
+// ---------- Opening linked files outside the app ----------
+
+/// File types a document link may hand to the system's default app. An
+/// allowlist, so a link can never launch an executable, script or installer.
+const EXTERNAL_OPEN_EXTS: &[&str] = &[
+    "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tif", "tiff", "heic", "avif",
+    "ico", "mp3", "m4a", "wav", "ogg", "flac", "mp4", "m4v", "mov", "webm", "csv", "tsv",
+    "xlsx", "xls", "docx", "doc", "pptx", "ppt", "key", "pages", "numbers", "odt", "ods",
+    "odp", "rtf", "epub", "html", "htm",
+];
+
+fn externally_openable(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| EXTERNAL_OPEN_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// Open a linked document (PDF, image, spreadsheet…) in its default app.
+#[tauri::command]
+fn open_with_default_app(app: AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let p = Path::new(&path);
+    if !p.is_file() {
+        return Err("File not found".into());
+    }
+    if !externally_openable(p) {
+        return Err("This kind of file isn't opened from links".into());
+    }
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 // ---------- Change review: the version the reader last saw ----------
 
 const SEEN_MAX_BYTES: usize = 4 * 1024 * 1024;
@@ -1135,7 +1169,8 @@ pub fn run() {
             path_exists,
             path_is_dir,
             seen_get,
-            seen_set
+            seen_set,
+            open_with_default_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -1161,4 +1196,24 @@ pub fn run() {
             let _ = (app_handle, &event);
         }
     });
+}
+
+#[cfg(test)]
+mod external_open_tests {
+    use super::externally_openable;
+    use std::path::Path;
+
+    #[test]
+    fn allows_documents_and_media() {
+        for p in ["a.pdf", "b.PNG", "c/d.xlsx", "e.html"] {
+            assert!(externally_openable(Path::new(p)), "{p}");
+        }
+    }
+
+    #[test]
+    fn refuses_executables_and_scripts() {
+        for p in ["a.app", "b.exe", "c.sh", "d.command", "e.js", "f.bat", "g", "h.pkg", "i.dmg"] {
+            assert!(!externally_openable(Path::new(p)), "{p}");
+        }
+    }
 }
