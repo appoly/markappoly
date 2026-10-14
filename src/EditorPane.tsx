@@ -201,7 +201,7 @@ export function SplitView({
 }: EditorProps & {
   dark: boolean;
   basePath?: string;
-  onToggleTask: (i: number) => void;
+  onToggleTask: (line: number) => void;
   onOpenLocal?: (path: string) => void;
   blockRemoteImages?: boolean;
   resolveWiki?: (target: string) => string | null;

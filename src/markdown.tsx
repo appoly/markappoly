@@ -184,7 +184,8 @@ export function resolveImageSrc(src: string, basePath?: string, blockRemote?: bo
 type PreviewProps = {
   source: string;
   dark: boolean;
-  onToggleTask: (index: number) => void;
+  /** Toggle the task on this 1-based source line. */
+  onToggleTask: (line: number) => void;
   /** Open a resolved local Markdown path (relative links). */
   onOpenLocal?: (path: string) => void;
   basePath?: string;
@@ -373,10 +374,6 @@ function PreviewInner({
   onTagClick,
   depth = 0,
 }: PreviewProps) {
-  // Task checkboxes render in document order; track their index to map back to source.
-  // Must reset every render (not be memoized across renders).
-  let taskIndex = -1;
-
   const [hover, setHover] = useState<{ path: string; x: number; y: number } | null>(null);
   const showTimer = useRef<number | null>(null);
   const hideTimer = useRef<number | null>(null);
@@ -442,10 +439,17 @@ function PreviewInner({
     },
     input({ node: _node, ...props }) {
       if (props.type === "checkbox") {
-        taskIndex += 1;
-        const idx = taskIndex;
+        // The enclosing <li> carries its source line (rehypeSourceLines), which
+        // maps the click back to the right task even past code samples.
         return (
-          <input type="checkbox" checked={!!props.checked} onChange={() => onToggleTask(idx)} />
+          <input
+            type="checkbox"
+            checked={!!props.checked}
+            onChange={(e) => {
+              const line = Number(e.currentTarget.closest("li")?.dataset.sourceLine);
+              if (line) onToggleTask(line);
+            }}
+          />
         );
       }
       return <input {...props} />;

@@ -1,3 +1,5 @@
+import YAML from "yaml";
+
 /** Minimal YAML frontmatter parser for the reading chrome (title, tags, etc.). */
 
 export type Frontmatter = {
@@ -41,6 +43,7 @@ export function parseSimpleYaml(yaml: string): Record<string, string | string[]>
     if (val === "" || val === "|" || val === ">") {
       // Block scalar / empty → collect following indented lines or list items
       const items: string[] = [];
+      let nested = false;
       while (i < lines.length) {
         const next = lines[i];
         const listItem = /^\s+-\s+(.*)$/.exec(next);
@@ -49,6 +52,14 @@ export function parseSimpleYaml(yaml: string): Record<string, string | string[]>
           i += 1;
           continue;
         }
+        if (/^\s+\S/.test(next) && val === "" && items.length === 0) {
+          // A nested map: not something the simple view can show or edit, so
+          // skip its block and leave the key out entirely.
+          while (i < lines.length && (/^\s+\S/.test(lines[i]) || !lines[i].trim())) i += 1;
+          items.length = 0;
+          nested = true;
+          break;
+        }
         if (/^\s+\S/.test(next) && val !== "") {
           items.push(next.trim());
           i += 1;
@@ -56,7 +67,7 @@ export function parseSimpleYaml(yaml: string): Record<string, string | string[]>
         }
         break;
       }
-      data[key] = items.length ? items : "";
+      if (!nested) data[key] = items.length ? items : "";
       continue;
     }
     if (val.startsWith("[") && val.endsWith("]")) {
@@ -108,21 +119,57 @@ export function serializeYaml(data: Record<string, string | string[]>): string {
 }
 
 /**
- * Replace (or insert) the document's frontmatter block with the given data.
+ * Write edited properties back into the document's frontmatter. Only keys that
+ * were added, changed or removed are touched: nested maps, comments, key order
+ * and value types (`draft: false` stays a boolean) survive, because the simple
+ * map the Properties panel edits only sees top-level scalars and lists.
  * An empty map removes the block entirely.
  */
 export function replaceFrontmatter(
   source: string,
   data: Record<string, string | string[]>,
 ): string {
-  const keys = Object.keys(data);
-  const block = keys.length === 0 ? "" : `---\n${serializeYaml(data)}\n---\n`;
-  if (FM_RE.test(source)) {
-    // Replacement via a function so `$` sequences in values are kept literal.
-    return source.replace(FM_RE, () => block);
+  const m = FM_RE.exec(source);
+  if (!m && Object.keys(data).length === 0) return source;
+  if (!m) return `---\n${serializeYaml(data)}\n---\n\n${source}`;
+
+  const doc = YAML.parseDocument(m[1]);
+  if (doc.errors.length > 0 || !(YAML.isMap(doc.contents) || doc.contents === null)) {
+    // Not YAML we can edit safely: fall back to rewriting the simple map.
+    return source.replace(FM_RE, () => `---\n${serializeYaml(data)}\n---\n`);
   }
-  if (!block) return source;
-  return `${block}\n${source}`;
+  const prev = parseSimpleYaml(m[1]);
+  for (const key of Object.keys(prev)) {
+    if (!(key in data)) doc.delete(key);
+  }
+  for (const [key, value] of Object.entries(data)) {
+    if (key in prev && sameValue(prev[key], value)) continue;
+    doc.set(key, toYamlValue(doc.get(key), value));
+  }
+  if (!YAML.isMap(doc.contents) || doc.contents.items.length === 0) return source.slice(m[0].length);
+  let yaml = doc.toString({ lineWidth: 0, flowCollectionPadding: false }).replace(/\n$/, "");
+  const eol = m[0].includes("\r\n") ? "\r\n" : "\n";
+  if (eol === "\r\n") yaml = yaml.replace(/\r?\n/g, "\r\n");
+  // Replacement via a function so `$` sequences in values are kept literal.
+  return source.replace(FM_RE, () => `---${eol}${yaml}${eol}---${eol}`);
+}
+
+function sameValue(a: string | string[], b: string | string[]): boolean {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]);
+  }
+  return a === b;
+}
+
+/** Keep the original scalar's type when the panel hands back its text. */
+function toYamlValue(existing: unknown, value: string | string[]): unknown {
+  if (Array.isArray(value)) return value;
+  const typed = typeof existing === "boolean" || typeof existing === "number" || existing === null;
+  if (typed || existing === undefined) {
+    if (/^(true|false)$/.test(value)) return value === "true";
+    if (typed && /^-?\d+(\.\d+)?$/.test(value)) return Number(value);
+  }
+  return value;
 }
 
 /** Pull a display title from common frontmatter keys. */

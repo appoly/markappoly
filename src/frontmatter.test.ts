@@ -79,3 +79,49 @@ describe("replaceFrontmatter", () => {
     expect(parseFrontmatter(next)!.data.title).toBe("$100 & more");
   });
 });
+
+describe("replaceFrontmatter keeps what the panel can't see", () => {
+  const src = [
+    "---",
+    "# site metadata",
+    "title: Old",
+    "draft: false",
+    "weight: 3",
+    "seo:",
+    "  description: Keep me",
+    "tags: [a, b]",
+    "---",
+    "Body",
+  ].join("\n");
+
+  it("edits one key without dropping nested maps, comments or types", () => {
+    const data = parseFrontmatter(src)!.data;
+    const out = replaceFrontmatter(src, { ...data, title: "New" });
+    expect(out).toContain("title: New");
+    expect(out).toContain("# site metadata");
+    expect(out).toContain("seo:\n  description: Keep me");
+    expect(out).toContain("draft: false\n");
+    expect(out).toContain("weight: 3\n");
+    expect(out).toContain("tags: [a, b]");
+    expect(out.endsWith("---\nBody")).toBe(true);
+  });
+
+  it("keeps booleans and numbers typed when the panel changes them", () => {
+    const data = parseFrontmatter(src)!.data;
+    const out = replaceFrontmatter(src, { ...data, draft: "true", weight: "5" });
+    expect(out).toContain("draft: true\n");
+    expect(out).toContain("weight: 5\n");
+  });
+
+  it("removing every visible key keeps nested maps", () => {
+    const out = replaceFrontmatter(src, {});
+    expect(out).toContain("seo:\n  description: Keep me");
+    expect(out).not.toContain("title:");
+  });
+
+  it("preserves CRLF line endings", () => {
+    const crlf = "---\r\ntitle: Old\r\nseo:\r\n  x: 1\r\n---\r\nBody";
+    const out = replaceFrontmatter(crlf, { title: "New" });
+    expect(out).toBe("---\r\ntitle: New\r\nseo:\r\n  x: 1\r\n---\r\nBody");
+  });
+});

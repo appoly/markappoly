@@ -51,6 +51,7 @@ import { useSaveDecision } from "./Modal";
 import { createDocumentSaver } from "./saveDocument";
 import type { EditorSession } from "./editorSession";
 import { WELCOME } from "./welcome";
+import { toggleTaskAtLine } from "./tasks";
 import "./App.css";
 
 // The editor (CodeMirror), diff, graph, and history views load on demand so a
@@ -937,15 +938,9 @@ function App() {
   }, []);
 
   const toggleTask = useCallback(
-    (index: number) => {
+    (line: number) => {
       const doc = getActive();
-      let i = -1;
-      const re = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/gm;
-      const updated = doc.source.replace(re, (full, prefix, c) => {
-        i += 1;
-        if (i !== index) return full;
-        return prefix + (c === " " ? "[x]" : "[ ]");
-      });
+      const updated = toggleTaskAtLine(doc.source, line);
       if (updated !== doc.source)
         patchDocById(doc.id, { source: updated, dirty: true });
     },
