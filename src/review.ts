@@ -18,25 +18,31 @@ export type Hunk = {
 
 /**
  * Line diff (Myers, O((N+M)·D)) between the old and new text, grouped into
- * hunks. Documents edited by agents are usually rewritten in a few places, so
- * D stays small even for long files.
+ * hunks. Blank lines are left out of the comparison: they don't render, and
+ * as anchors they make the diff pair up unrelated paragraphs (an unchanged
+ * heading would show as removed and re-added). Documents edited by agents are
+ * usually rewritten in a few places, so D stays small even for long files.
  */
 export function diffLines(oldText: string, newText: string): Hunk[] {
-  const a = splitLines(oldText);
-  const b = splitLines(newText);
+  const a = contentLines(oldText);
+  const b = contentLines(newText);
   // Trim the common prefix and suffix first: cheap, and it keeps D tiny.
   let pre = 0;
-  while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre += 1;
+  while (pre < a.length && pre < b.length && a[pre].text === b[pre].text) pre += 1;
   let suf = 0;
   while (
     suf < a.length - pre &&
     suf < b.length - pre &&
-    a[a.length - 1 - suf] === b[b.length - 1 - suf]
+    a[a.length - 1 - suf].text === b[b.length - 1 - suf].text
   )
     suf += 1;
   const A = a.slice(pre, a.length - suf);
   const B = b.slice(pre, b.length - suf);
-  const ops = myers(A, B);
+  const ops = myers(
+    A.map((l) => l.text),
+    B.map((l) => l.text),
+  );
+  const lastLine = splitLines(newText).length;
 
   const hunks: Hunk[] = [];
   let ai = 0;
@@ -56,17 +62,32 @@ export function diffLines(oldText: string, newText: string): Hunk[] {
       else bi += 1;
       k += 1;
     }
-    const removed = A.slice(aStart, ai);
-    const added = bi - bStart;
-    const start = pre + bStart + 1;
-    hunks.push({
-      kind: added === 0 ? "removed" : removed.length === 0 ? "added" : "changed",
-      start,
-      end: start + added - 1,
-      before: removed.join("\n"),
-    });
+    const removed = A.slice(aStart, ai).map((l) => l.text);
+    const added = B.slice(bStart, bi);
+    if (added.length === 0) {
+      // A gap: anchor it to the next surviving line in the new text.
+      const next = B[bStart] ?? b[pre + bStart];
+      const start = next ? next.line : lastLine + 1;
+      hunks.push({ kind: "removed", start, end: start - 1, before: removed.join("\n") });
+    } else {
+      hunks.push({
+        kind: removed.length === 0 ? "added" : "changed",
+        start: added[0].line,
+        end: added[added.length - 1].line,
+        before: removed.join("\n"),
+      });
+    }
   }
   return hunks;
+}
+
+/** Non-blank lines with their 1-based line numbers. */
+function contentLines(text: string): { text: string; line: number }[] {
+  const out: { text: string; line: number }[] = [];
+  splitLines(text).forEach((t, i) => {
+    if (t.trim()) out.push({ text: t.trimEnd(), line: i + 1 });
+  });
+  return out;
 }
 
 function splitLines(text: string): string[] {

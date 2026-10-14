@@ -29,8 +29,18 @@ describe("diffLines", () => {
   });
 
   it("handles empty sides and CRLF", () => {
-    expect(diffLines("", "x\ny")).toEqual([{ kind: "changed", start: 1, end: 2, before: "" }]);
+    expect(diffLines("", "x\ny")).toEqual([{ kind: "added", start: 1, end: 2, before: "" }]);
     expect(diffLines("a\r\nb", "a\nb")).toEqual([]);
+  });
+
+  it("ignores blank-line-only changes and keeps headings anchored", () => {
+    expect(diffLines("a\n\nb", "a\n\n\nb")).toEqual([]);
+    const before = ["## Setup", "", "Install it.", "", "## Deploy", "", "Ship it.", ""].join("\n");
+    const after = ["## Setup", "", "Install it.", "", "New step.", "", "## Deploy", ""].join("\n");
+    expect(diffLines(before, after)).toEqual([
+      { kind: "added", start: 5, end: 5, before: "" },
+      { kind: "removed", start: 9, end: 8, before: "Ship it." },
+    ]);
   });
 
   it("stays fast on a long document with scattered edits", () => {
