@@ -93,6 +93,75 @@ fn set_watched_files(
     Ok(())
 }
 
+#[derive(Default)]
+struct FolderWatchState {
+    debouncer: Mutex<Option<Debouncer<RecommendedWatcher>>>,
+}
+
+/// Whether a change under the open folder can affect the tree or the vault
+/// index: Markdown files and folders, outside hidden and build directories.
+fn folder_change_matters(root: &Path, path: &Path) -> bool {
+    let rel = path.strip_prefix(root).unwrap_or(path);
+    if rel.components().any(|c| {
+        let s = c.as_os_str().to_string_lossy();
+        s.starts_with('.') || s == "node_modules" || s == "target"
+    }) {
+        return false;
+    }
+    match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => matches!(
+            ext.to_ascii_lowercase().as_str(),
+            "md" | "markdown" | "mdown" | "mkd" | "mkdn" | "txt"
+        ),
+        // No extension: a folder, or something that no longer exists.
+        None => path.is_dir() || !path.exists(),
+    }
+}
+
+/// Watch the open folder recursively and emit `folder-changed` when notes or
+/// subfolders appear, disappear or change, so the tree and vault stay current
+/// while other tools write files. `None` stops watching.
+#[tauri::command]
+fn set_watched_folder(
+    app: AppHandle,
+    state: tauri::State<FolderWatchState>,
+    folder: Option<String>,
+) -> Result<(), String> {
+    {
+        let mut slot = state.debouncer.lock().map_err(|e| e.to_string())?;
+        *slot = None;
+    }
+    let Some(folder) = folder else {
+        return Ok(());
+    };
+    let root = PathBuf::from(&folder);
+    if !root.is_dir() {
+        return Ok(());
+    }
+    let root_for_cb = root.clone();
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(500),
+        move |res: Result<Vec<notify_debouncer_mini::DebouncedEvent>, _>| {
+            let Ok(events) = res else {
+                return;
+            };
+            if events
+                .iter()
+                .any(|ev| folder_change_matters(&root_for_cb, &ev.path))
+            {
+                let _ = app.emit("folder-changed", ());
+            }
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    debouncer
+        .watcher()
+        .watch(&root, RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
+    *state.debouncer.lock().map_err(|e| e.to_string())? = Some(debouncer);
+    Ok(())
+}
+
 /// Whether a path currently exists as a regular file (session restore for tabs).
 #[tauri::command]
 fn path_exists(path: String) -> bool {
@@ -1167,6 +1236,7 @@ pub fn run() {
     let app = builder
         .manage(PendingOpen::default())
         .manage(FileWatchState::default())
+        .manage(FolderWatchState::default())
         .on_menu_event(|app, event| {
             if event.id().0 == "install_cli" {
                 install_cli(app.clone());
@@ -1237,7 +1307,8 @@ pub fn run() {
             path_is_dir,
             seen_get,
             seen_set,
-            open_with_default_app
+            open_with_default_app,
+            set_watched_folder
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -1277,5 +1348,20 @@ mod external_open_tests {
         for p in ["a.app", "b.exe", "c.sh", "d.command", "e.js", "f.bat", "g", "h.pkg", "i.dmg"] {
             assert!(!externally_openable(Path::new(p)), "{p}");
         }
+    }
+}
+
+#[cfg(test)]
+mod folder_watch_tests {
+    use super::folder_change_matters;
+    use std::path::Path;
+
+    #[test]
+    fn notes_matter_but_hidden_and_build_dirs_do_not() {
+        let root = Path::new("/vault");
+        assert!(folder_change_matters(root, Path::new("/vault/a/note.md")));
+        assert!(!folder_change_matters(root, Path::new("/vault/.git/index")));
+        assert!(!folder_change_matters(root, Path::new("/vault/node_modules/x/README.md")));
+        assert!(!folder_change_matters(root, Path::new("/vault/img.png")));
     }
 }

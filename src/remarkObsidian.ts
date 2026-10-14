@@ -40,7 +40,9 @@ function wikiLinkNode(raw: string, resolve?: (t: string) => string | null): any 
     };
   }
 
-  const resolved = resolve?.(raw) ?? null;
+  const file_ = resolve?.(raw) ?? null;
+  // `[[Note#Section]]` keeps its section so the link lands on that heading.
+  const resolved = file_ && anchor ? `${file_}#${new GithubSlugger().slug(anchor)}` : file_;
   return {
     type: "link",
     url: resolved ?? "#",

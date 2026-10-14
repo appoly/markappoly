@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileEntry } from "./Sidebar";
+import type { Heading } from "./headings";
 import { fuzzyMatch, fuzzyScorePath } from "./fuzzy";
 
 export type Command = { id: string; label: string; hint?: string };
@@ -7,10 +8,12 @@ export type Command = { id: string; label: string; hint?: string };
 type Item =
   | { kind: "file"; label: string; detail: string; path: string; starred: boolean }
   | { kind: "command"; label: string; hint?: string; id: string }
-  | { kind: "tag"; label: string; count: number; tag: string };
+  | { kind: "tag"; label: string; count: number; tag: string }
+  | { kind: "heading"; label: string; heading: Heading };
 
 /**
- * ⌘P palette. Type to jump to a file; `>` lists commands; `#` lists vault tags.
+ * ⌘P palette. Type to jump to a file; `>` lists commands; `#` lists vault
+ * tags; `@` lists the current document's headings.
  */
 export function QuickSwitcher({
   files,
@@ -20,6 +23,8 @@ export function QuickSwitcher({
   onOpenFile,
   onRunCommand,
   onOpenTag,
+  headings = [],
+  onGotoHeading,
   onClose,
 }: {
   files: FileEntry[];
@@ -29,6 +34,8 @@ export function QuickSwitcher({
   onOpenFile: (path: string) => void;
   onRunCommand: (id: string) => void;
   onOpenTag: (tag: string) => void;
+  headings?: Heading[];
+  onGotoHeading?: (h: Heading) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -52,6 +59,16 @@ export function QuickSwitcher({
         .filter((x) => x.m !== null)
         .sort((a, b) => b.m!.score - a.m!.score)
         .map(({ c }) => ({ kind: "command" as const, label: c.label, hint: c.hint, id: c.id }));
+    }
+
+    if (q.startsWith("@")) {
+      const needle = q.slice(1).trim();
+      return headings
+        .map((h, i) => ({ h, i, m: needle ? fuzzyMatch(needle, h.text) : { score: 0 } }))
+        .filter((x) => x.m !== null)
+        .sort((a, b) => (needle ? b.m!.score - a.m!.score : a.i - b.i))
+        .slice(0, 80)
+        .map(({ h }) => ({ kind: "heading" as const, label: h.text, heading: h }));
     }
 
     if (q.startsWith("#")) {
@@ -88,7 +105,7 @@ export function QuickSwitcher({
       .sort((a, b) => b.score! - a.score!)
       .slice(0, 50)
       .map(({ f }) => toItem(f));
-  }, [query, files, commands, tags, starred]);
+  }, [query, files, commands, tags, starred, headings]);
 
   useEffect(() => {
     setSelected(0);
@@ -105,6 +122,7 @@ export function QuickSwitcher({
     onClose();
     if (item.kind === "file") onOpenFile(item.path);
     else if (item.kind === "command") onRunCommand(item.id);
+    else if (item.kind === "heading") onGotoHeading?.(item.heading);
     else onOpenTag(item.tag);
   };
 
@@ -140,7 +158,7 @@ export function QuickSwitcher({
         <input
           ref={inputRef}
           className="qs-input"
-          placeholder="Jump to a file…  ( > commands, # tags )"
+          placeholder="Jump to a file…  ( > commands, # tags, @ headings )"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
@@ -149,14 +167,20 @@ export function QuickSwitcher({
         <div className="qs-list" ref={listRef}>
           {items.length === 0 ? (
             <div className="qs-empty">
-              {files.length === 0 && !query.startsWith(">")
+              {files.length === 0 && !/^[>@]/.test(query)
                 ? "Open a folder to jump between files."
                 : "No matches."}
             </div>
           ) : (
             items.map((item, i) => (
               <button
-                key={item.kind === "file" ? item.path : item.label}
+                key={
+                  item.kind === "file"
+                    ? item.path
+                    : item.kind === "heading"
+                      ? `${item.heading.line}`
+                      : item.label
+                }
                 className={"qs-item" + (i === selected ? " selected" : "")}
                 data-selected={i === selected}
                 onMouseEnter={() => setSelected(i)}
@@ -170,6 +194,13 @@ export function QuickSwitcher({
                     </span>
                     <span className="qs-detail">{item.detail}</span>
                   </>
+                ) : item.kind === "heading" ? (
+                  <span
+                    className="qs-label"
+                    style={{ paddingLeft: (item.heading.depth - 1) * 12 }}
+                  >
+                    {item.label}
+                  </span>
                 ) : item.kind === "command" ? (
                   <>
                     <span className="qs-label">{item.label}</span>

@@ -43,8 +43,10 @@ type PreviewProps = {
   dark: boolean;
   /** Toggle the task on this 1-based source line. */
   onToggleTask: (line: number) => void;
-  /** Open a resolved local Markdown path (relative links). */
+  /** Open a resolved local path, with any `#fragment` (relative links). */
   onOpenLocal?: (path: string) => void;
+  /** Called before an in-document anchor jump, so it can be undone with Back. */
+  onBeforeNavigate?: () => void;
   basePath?: string;
   blockRemoteImages?: boolean;
   /** Resolve `[[wiki links]]` against the open folder's index. */
@@ -212,6 +214,7 @@ function PreviewInner({
   dark,
   onToggleTask,
   onOpenLocal,
+  onBeforeNavigate,
   basePath,
   blockRemoteImages,
   resolveWiki,
@@ -248,12 +251,16 @@ function PreviewInner({
   );
 
   /** Absolute local file behind a preview link, or null for web/anchor links. */
-  const localTargetOf = (url: string): string | null => {
+  /** Any local file a link points at (without its fragment), or null. */
+  const localFileOf = (url: string): string | null => {
     if (!url || url.startsWith("#") || SAFE_LINK.test(url)) return null;
-    if (!isLocalMarkdownHref(url)) return null;
     if (isAbsolutePath(url)) return url.split(/[#?]/)[0];
-    return basePath ? resolveRelativePath(basePath, url) : null;
+    // Other schemes (vscode:, javascript:, …) are never local files.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^file:/i.test(url)) return null;
+    return basePath ? resolveRelativePath(basePath, url.split("?")[0]) : null;
   };
+  const localTargetOf = (url: string): string | null =>
+    isLocalMarkdownHref(url) ? localFileOf(url) : null;
 
   const components: Components = {
     code({ node: _node, className, children, ...rest }) {
@@ -340,14 +347,21 @@ function PreviewInner({
           href={url}
           onClick={(e) => {
             e.preventDefault();
+            const hash = url.indexOf("#");
+            const fragment = hash >= 0 ? url.slice(hash) : "";
             if (url.startsWith("#")) {
-              document
-                .getElementById(url.slice(1))
-                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+              const target = document.getElementById(decodeURIComponent(url.slice(1)));
+              if (target) {
+                onBeforeNavigate?.();
+                target.scrollIntoView({ behavior: "smooth", block: "start" });
+              }
             } else if (SAFE_LINK.test(url)) {
               openUrl(url).catch(() => {});
-            } else if (local && onOpenLocal) {
-              onOpenLocal(local);
+            } else if (onOpenLocal) {
+              // Markdown opens as a document; other files are routed by the
+              // app (code view, or a PDF/image in its default app).
+              const file = local ?? localFileOf(url);
+              if (file) onOpenLocal(file + fragment);
             }
           }}
           onMouseEnter={

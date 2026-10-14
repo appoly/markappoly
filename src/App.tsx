@@ -70,6 +70,14 @@ import {
   markComments,
 } from "./reviewDom";
 import { CommentComposer, ReviewBar, useComments } from "./ReviewBar";
+import {
+  NavHistory,
+  fileKind,
+  headingForFragment,
+  lineFromFragment,
+  splitFragment,
+  type NavEntry,
+} from "./navigation";
 import "./App.css";
 
 // The editor (CodeMirror), diff, graph, and history views load on demand so a
@@ -85,6 +93,9 @@ const DiffView = lazy(() =>
 );
 const GraphView = lazy(() =>
   import("./GraphView").then((m) => ({ default: m.GraphView })),
+);
+const CodeView = lazy(() =>
+  import("./CodeView").then((m) => ({ default: m.CodeView })),
 );
 const HistoryView = lazy(() =>
   import("./HistoryView").then((m) => ({ default: m.HistoryView })),
@@ -277,7 +288,7 @@ function App() {
   }, [activateDoc, setMode]);
 
   // ----- Open / save -----
-  const openPath = useCallback(
+  const openFileTab = useCallback(
     async (path: string) => {
       const existing = docsRef.current.find((d) => d.path === path);
       if (existing) {
@@ -322,6 +333,137 @@ function App() {
     [activateDoc],
   );
 
+  // ----- Navigation: fragments, linked files, back/forward -----
+  const navHistory = useRef(new NavHistory());
+  const [, setNavVersion] = useState(0);
+  const sessionReadyRef = useRef(false);
+  const hereEntry = useCallback((): NavEntry => {
+    const doc = getActive();
+    return {
+      docId: doc.id,
+      path: doc.path,
+      scroll: contentRef.current?.scrollTop ?? 0,
+    };
+  }, [getActive]);
+  const rememberHere = useCallback(() => {
+    if (!sessionReadyRef.current) return;
+    const doc = getActive();
+    if (!doc.path && doc.source === WELCOME) return;
+    navHistory.current.push(hereEntry());
+    setNavVersion((v) => v + 1);
+  }, [getActive, hereEntry]);
+
+  /** Scroll the active document to a `#heading` or `#L42` fragment. */
+  const goToFragment = useCallback((path: string, fragment: string) => {
+    const doc = docsRef.current.find((d) => d.path === path);
+    if (!doc) return;
+    const line =
+      lineFromFragment(fragment) ??
+      (() => {
+        const h = headingForFragment(extractHeadings(doc.source), fragment);
+        return h ? h.line + 1 : null;
+      })();
+    if (line != null) {
+      setLineTarget({ path, line, align: "start" });
+      return;
+    }
+    // Footnotes and explicit HTML ids aren't headings: look in the DOM.
+    requestAnimationFrame(() =>
+      document
+        .getElementById(fragment)
+        ?.scrollIntoView({ block: "start", behavior: "smooth" }),
+    );
+  }, []);
+
+  /**
+   * Open a path from anywhere (links, sidebar, switcher, the command line).
+   * Markdown opens as a document, other text files as read-only code, and
+   * linked documents such as PDFs in their default app. A `#fragment`
+   * scrolls to a heading or `L42` line.
+   */
+  const openPath = useCallback(
+    async (raw: string, opts?: { history?: boolean }) => {
+      const { path, fragment } = splitFragment(raw);
+      const kind = fileKind(path);
+      if (kind === "external") {
+        try {
+          await invoke("open_with_default_app", { path });
+        } catch (e) {
+          setNotice(`Could not open ${basename(path)}. ${String(e)}`);
+        }
+        return false;
+      }
+      if (kind === "blocked") {
+        setNotice(`${basename(path)} isn't a document Markappoly can open.`);
+        return false;
+      }
+      const sameDoc = getActive().path === path;
+      if (opts?.history !== false && (!sameDoc || fragment)) rememberHere();
+      if (!(await openFileTab(path))) return false;
+      if (fragment) goToFragment(path, fragment);
+      return true;
+    },
+    [getActive, rememberHere, openFileTab, goToFragment],
+  );
+
+  const navigateTo = useCallback(
+    async (entry: NavEntry | null) => {
+      if (!entry) return;
+      setNavVersion((v) => v + 1);
+      const open = docsRef.current.find((d) => d.id === entry.docId);
+      const restore = () =>
+        requestAnimationFrame(() => {
+          if (contentRef.current) contentRef.current.scrollTop = entry.scroll;
+        });
+      if (open) {
+        previewPositions.current.set(open.id, entry.scroll);
+        if (open.id === activeIdRef.current) restore();
+        else {
+          activateDoc(open.id);
+          setCompare(null);
+        }
+        return;
+      }
+      if (entry.path && (await openPath(entry.path, { history: false }))) {
+        const reopened = docsRef.current.find((d) => d.path === entry.path);
+        if (reopened) previewPositions.current.set(reopened.id, entry.scroll);
+        restore();
+      }
+    },
+    [activateDoc, openPath],
+  );
+  const goBack = useCallback(
+    () => navigateTo(navHistory.current.goBack(hereEntry())),
+    [navigateTo, hereEntry],
+  );
+  const goForward = useCallback(
+    () => navigateTo(navHistory.current.goForward(hereEntry())),
+    [navigateTo, hereEntry],
+  );
+  useEffect(() => {
+    const inEditor = () =>
+      !!document.activeElement?.closest(".cm-editor, input, textarea");
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      if (e.key !== "[" && e.key !== "]") return;
+      // ⌘[ / ⌘] indent in the editor; only navigate while reading.
+      if (inEditor() || document.querySelector("dialog[open]")) return;
+      e.preventDefault();
+      if (e.key === "[") goBack();
+      else goForward();
+    };
+    const onMouse = (e: MouseEvent) => {
+      if (e.button === 3) goBack();
+      else if (e.button === 4) goForward();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mouseup", onMouse);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mouseup", onMouse);
+    };
+  }, [goBack, goForward]);
+
   // Files the OS asks us to open (Finder, "Open With", the command line) wait
   // behind the session restore so the requested file ends up on top of the
   // restored tabs and active, instead of buried by the restore's own selection.
@@ -335,6 +477,7 @@ function App() {
   const [lineTarget, setLineTarget] = useState<{
     path: string;
     line: number;
+    align?: ScrollLogicalPosition;
   } | null>(null);
   const openPathAtLine = useCallback(
     async (path: string, line: number) => {
@@ -391,7 +534,7 @@ function App() {
         if (parent instanceof HTMLDetailsElement) parent.open = true;
         parent = parent.parentElement;
       }
-      el.scrollIntoView({ block: "center" });
+      el.scrollIntoView({ block: lineTarget.align ?? "center" });
     } else if (contentEl) contentEl.scrollTop = 0;
     setLineTarget(null);
   }, [lineTarget, filePath, mode, headings, contentEl, editorReady]);
@@ -413,6 +556,35 @@ function App() {
       setFiles([]);
     }
   }, []);
+
+  // Keep the tree and vault index current while other tools add, remove or
+  // rename notes in the open folder.
+  useEffect(() => {
+    invoke("set_watched_folder", { folder: folderPath }).catch(() => {});
+    if (!folderPath) return;
+    let timer: number | undefined;
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    listen("folder-changed", () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(async () => {
+        try {
+          setFiles(await invoke<FileEntry[]>("list_markdown_dir", { path: folderPath }));
+        } catch {
+          /* folder went away; keep the last listing */
+        }
+        refreshVault();
+      }, 400);
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      unlisten?.();
+    };
+  }, [folderPath, refreshVault]);
 
   openRequestedRef.current = async (path) => {
     const isDir = await invoke<boolean>("path_is_dir", { path }).catch(() => false);
@@ -565,6 +737,7 @@ function App() {
       if (activeIdRef.current === id)
         activateDoc(next[Math.min(index, next.length - 1)].id);
       documentModes.current.delete(id);
+      navHistory.current.dropDoc(id);
       editorSessions.current.delete(id);
       previewPositions.current.delete(id);
       setCompare((c) => (c && (c.aId === id || c.bId === id) ? null : c));
@@ -1135,7 +1308,10 @@ function App() {
       if (cancelled) return;
       // Anything requested from outside during the restore opens on top of it.
       await openQueue.flush();
-      if (!cancelled) setSessionReady(true);
+      if (!cancelled) {
+        sessionReadyRef.current = true;
+        setSessionReady(true);
+      }
     })();
     return () => {
       cancelled = true;
@@ -1229,6 +1405,13 @@ function App() {
   }, [openPath, attachImage, getActive]);
 
   // ----- Native menu events -----
+  // Review actions live further down (they depend on render-time state);
+  // menu and palette commands reach them through this ref.
+  const reviewActions = useRef({
+    next: () => {},
+    done: () => {},
+    copy: () => {},
+  });
   const handleMenu = useCallback(
     (id: string) => {
       if (document.querySelector("dialog[open]")) return;
@@ -1345,9 +1528,27 @@ function App() {
             if (rest === "clear") invoke("clear_recents").catch(() => {});
             else if (rest !== "none") openPath(rest);
           }
+          break;
+        case "nav_back":
+          goBack();
+          break;
+        case "nav_forward":
+          goForward();
+          break;
+        case "review_next":
+          reviewActions.current.next();
+          break;
+        case "review_done":
+          reviewActions.current.done();
+          break;
+        case "copy_feedback":
+          reviewActions.current.copy();
+          break;
       }
     },
     [
+      goBack,
+      goForward,
       openFile,
       openFolder,
       saveFile,
@@ -1492,38 +1693,6 @@ function App() {
     insertLink,
   ]);
 
-  const commands: Command[] = [
-    { id: "new_tab", label: "New tab", hint: "⌘T" },
-    { id: "new_note", label: "New note from template…", hint: "⌘N" },
-    { id: "daily_note", label: "Open today's daily note", hint: "⌘⇧D" },
-    { id: "open", label: "Open file…", hint: "⌘O" },
-    { id: "open_folder", label: "Open folder…", hint: "⌘⇧O" },
-    { id: "save", label: "Save", hint: "⌘S" },
-    { id: "reload", label: "Reload from disk", hint: "⌘R" },
-    { id: "history", label: "File history…" },
-    { id: "toggle_mode", label: "Toggle edit / preview", hint: "⌘E" },
-    { id: "toggle_split", label: "Toggle split view", hint: "⌘⇧E" },
-    { id: "present", label: "Start presentation", hint: "⌘⇧P" },
-    { id: "local_graph", label: "Graph", hint: "⌘⇧G" },
-    {
-      id: "bookmark",
-      label: bookmarked ? "Remove bookmark" : "Bookmark this file",
-      hint: "⌘D",
-    },
-    { id: "add_properties", label: "Add properties" },
-    { id: "compare", label: "Compare two files" },
-    { id: "copy_html", label: "Copy as HTML" },
-    { id: "export:pdf", label: "Export as PDF" },
-    { id: "export:html", label: "Export as HTML" },
-    { id: "export:docx", label: "Export as Word" },
-    { id: "find", label: "Find in document", hint: "⌘F" },
-    { id: "toggle_sidebar", label: "Toggle sidebar", hint: "⌘\\" },
-    { id: "settings", label: "Settings…", hint: "⌘," },
-    { id: "theme_system", label: "Theme: System" },
-    { id: "theme_light", label: "Theme: Light" },
-    { id: "theme_dark", label: "Theme: Dark" },
-  ];
-
   // ----- Change review and comments -----
   const reviewBase = active.reviewBase;
   const hunks = useMemo(
@@ -1621,6 +1790,12 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [hunks.length, stepChange]);
 
+  reviewActions.current = {
+    next: () => stepChange(1),
+    done: markReviewed,
+    copy: () => void copyFeedback(),
+  };
+
   const reviewPosition =
     reviewIndex >= 0 && hunks[reviewIndex]
       ? (() => {
@@ -1645,6 +1820,49 @@ function App() {
         onClearComments={() => setComments([])}
       />
     ) : null;
+
+  const commands: Command[] = [
+    { id: "new_tab", label: "New tab", hint: "⌘T" },
+    { id: "nav_back", label: "Go back", hint: "⌘[" },
+    { id: "nav_forward", label: "Go forward", hint: "⌘]" },
+    ...(hunks.length
+      ? [
+          { id: "review_next", label: "Next change", hint: "F7" },
+          { id: "review_done", label: "Mark changes as reviewed" },
+        ]
+      : []),
+    ...(comments.length
+      ? [{ id: "copy_feedback", label: "Copy review feedback" }]
+      : []),
+    { id: "new_note", label: "New note from template…", hint: "⌘N" },
+    { id: "daily_note", label: "Open today's daily note", hint: "⌘⇧D" },
+    { id: "open", label: "Open file…", hint: "⌘O" },
+    { id: "open_folder", label: "Open folder…", hint: "⌘⇧O" },
+    { id: "save", label: "Save", hint: "⌘S" },
+    { id: "reload", label: "Reload from disk", hint: "⌘R" },
+    { id: "history", label: "File history…" },
+    { id: "toggle_mode", label: "Toggle edit / preview", hint: "⌘E" },
+    { id: "toggle_split", label: "Toggle split view", hint: "⌘⇧E" },
+    { id: "present", label: "Start presentation", hint: "⌘⇧P" },
+    { id: "local_graph", label: "Graph", hint: "⌘⇧G" },
+    {
+      id: "bookmark",
+      label: bookmarked ? "Remove bookmark" : "Bookmark this file",
+      hint: "⌘D",
+    },
+    { id: "add_properties", label: "Add properties" },
+    { id: "compare", label: "Compare two files" },
+    { id: "copy_html", label: "Copy as HTML" },
+    { id: "export:pdf", label: "Export as PDF" },
+    { id: "export:html", label: "Export as HTML" },
+    { id: "export:docx", label: "Export as Word" },
+    { id: "find", label: "Find in document", hint: "⌘F" },
+    { id: "toggle_sidebar", label: "Toggle sidebar", hint: "⌘\\" },
+    { id: "settings", label: "Settings…", hint: "⌘," },
+    { id: "theme_system", label: "Theme: System" },
+    { id: "theme_light", label: "Theme: Light" },
+    { id: "theme_dark", label: "Theme: Dark" },
+  ];
 
   const tabs = docs.map((d) => ({
     id: d.id,
@@ -2050,6 +2268,10 @@ function App() {
                 <Suspense fallback={<div className="lazy-fallback" />}>
                   <DiffView a={reviewBase} b={source} dark={prefs.dark} />
                 </Suspense>
+              ) : mode === "preview" && filePath && fileKind(filePath) === "text" ? (
+                <Suspense fallback={<div className="lazy-fallback" />}>
+                  <CodeView source={source} path={filePath} />
+                </Suspense>
               ) : mode === "preview" ? (
                 <div className="markdown-body" ref={setBodyEl}>
                   {source === WELCOME && !filePath && (
@@ -2108,6 +2330,7 @@ function App() {
                       basePath={baseDir}
                       onToggleTask={toggleTask}
                       onOpenLocal={openPath}
+                      onBeforeNavigate={rememberHere}
                       blockRemoteImages={prefs.blockRemoteImages}
                       resolveWiki={resolveWiki}
                       onTagClick={onTagClick}
@@ -2239,6 +2462,11 @@ function App() {
           onOpenFile={openPath}
           onRunCommand={handleMenu}
           onOpenTag={onTagClick}
+          headings={source === WELCOME && !filePath ? [] : headings}
+          onGotoHeading={(h) => {
+            rememberHere();
+            gotoHeading(h);
+          }}
           onClose={() => setSwitcherOpen(false)}
         />
       )}
