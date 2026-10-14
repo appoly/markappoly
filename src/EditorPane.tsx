@@ -16,6 +16,7 @@ import { Preview } from "./markdown";
 import { useDebouncedValue } from "./useDebouncedValue";
 import { restoreEditor, type EditorSession } from "./editorSession";
 import { isInTable } from "./tableTools";
+import { reviewMarks, showReviewMarks, type LineMark } from "./editorReview";
 import type { FileEntry } from "./Sidebar";
 
 const EDITOR_BASE: Extension[] = [
@@ -49,6 +50,8 @@ export type EditorProps = {
   onAttachImage: (view: EditorView, payload: AttachPayload) => void;
   getFiles: () => FileEntry[];
   getTags: () => string[];
+  /** Lines changed since the reader last saw the file (change review). */
+  lineMarks?: LineMark[];
 };
 
 /** The CodeMirror source editor, shared by the Edit and Split views. */
@@ -64,7 +67,14 @@ export function EditorPane({
   onAttachImage,
   getFiles,
   getTags,
+  lineMarks,
 }: EditorProps) {
+  const marksRef = useRef<LineMark[]>(lineMarks ?? []);
+  marksRef.current = lineMarks ?? [];
+  useEffect(() => {
+    const view = cmRef.current?.view;
+    if (view) showReviewMarks(view, lineMarks ?? []);
+  }, [lineMarks, cmRef]);
   const initial = useMemo(
     () => restoreEditor(sessions.get(docId), value),
     [docId, sessions],
@@ -129,6 +139,7 @@ export function EditorPane({
       markdown(),
       search(),
       ...EDITOR_BASE,
+      reviewMarks,
       imageExt,
       wikiExt,
       sessionExt,
@@ -181,6 +192,7 @@ export function EditorPane({
           onTableChange(
             isInTable(view.state.doc, view.state.selection.main.head),
           );
+          if (marksRef.current.length) showReviewMarks(view, marksRef.current);
           onReady(view);
         });
       }}
@@ -197,8 +209,11 @@ export function SplitView({
   blockRemoteImages,
   resolveWiki,
   onTagClick,
+  onPreviewBody,
   ...editor
 }: EditorProps & {
+  /** Receives the preview's .markdown-body element (review highlights). */
+  onPreviewBody?: (el: HTMLElement | null) => void;
   dark: boolean;
   basePath?: string;
   onToggleTask: (line: number) => void;
@@ -242,7 +257,7 @@ export function SplitView({
         <EditorPane {...editor} />
       </div>
       <div className="split-pane split-preview" ref={previewRef}>
-        <div className="markdown-body">
+        <div className="markdown-body" ref={onPreviewBody}>
           <Preview
             source={previewSource}
             dark={dark}

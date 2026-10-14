@@ -70,6 +70,7 @@ import {
   markComments,
 } from "./reviewDom";
 import { CommentComposer, ReviewBar, useComments } from "./ReviewBar";
+import type { LineMark } from "./editorReview";
 import {
   NavHistory,
   fileKind,
@@ -1725,14 +1726,43 @@ function App() {
   const [bodyEl, setBodyEl] = useState<HTMLElement | null>(null);
   const changeTargets = useRef<(HTMLElement | null)[]>([]);
   const commentAnchors = useRef(new Map<string, HTMLElement>());
-  const showingPreview = mode === "preview" && !compare && !reviewDiff;
+  const showingPreview =
+    (mode === "preview" || mode === "split") && !compare && !reviewDiff;
   useLayoutEffect(() => {
     if (!bodyEl || !showingPreview) return;
-    clearReviewMarks(bodyEl);
-    changeTargets.current = markChanges(bodyEl, hunks);
-    commentAnchors.current = markComments(bodyEl, placedComments);
-    return () => clearCommentHighlights();
-  }, [bodyEl, showingPreview, hunks, placedComments, source]);
+    const decorate = () => {
+      clearReviewMarks(bodyEl);
+      changeTargets.current = markChanges(bodyEl, hunks);
+      commentAnchors.current = markComments(bodyEl, placedComments);
+    };
+    decorate();
+    // The split preview re-renders on a delay, and React reuses elements
+    // whose content changed, so re-apply the marks whenever the rendered
+    // blocks change. Marks are attributes, which this doesn't observe.
+    let frame = 0;
+    const observer = new MutationObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(decorate);
+    });
+    observer.observe(bodyEl, { childList: true, subtree: true, characterData: true });
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      clearCommentHighlights();
+    };
+  }, [bodyEl, showingPreview, hunks, placedComments]);
+  const lineMarks = useMemo<LineMark[]>(
+    () =>
+      hunks.flatMap((h): LineMark[] =>
+        h.kind === "removed"
+          ? [{ line: h.start, kind: "removed-above" }]
+          : Array.from({ length: h.end - h.start + 1 }, (_, i) => ({
+              line: h.start + i,
+              kind: h.kind === "added" ? "added" : "changed",
+            })),
+      ),
+    [hunks],
+  );
 
   const flash = (el: HTMLElement | null | undefined) => {
     if (!el) return;
@@ -1746,9 +1776,11 @@ function App() {
       if (reviewDiff) setReviewDiff(false);
       const next = (reviewIndex + delta + hunks.length) % hunks.length;
       setReviewIndex(next);
+      if (modeRef.current !== "preview" && filePath)
+        setLineTarget({ path: filePath, line: Math.max(1, hunks[next].start) });
       requestAnimationFrame(() => flash(changeTargets.current[next]));
     },
-    [hunks.length, reviewIndex, reviewDiff],
+    [hunks, reviewIndex, reviewDiff, filePath],
   );
   const markReviewed = useCallback(() => {
     patchDocById(activeIdRef.current, { reviewBase: undefined });
@@ -1807,7 +1839,7 @@ function App() {
         })()
       : null;
   const reviewBar =
-    reviewing && mode === "preview" ? (
+    reviewing && !compare ? (
       <ReviewBar
         summary={hunks.length ? describeChanges(hunks, reviewSections.length) : null}
         position={reviewPosition}
@@ -2123,7 +2155,7 @@ function App() {
           ) : !editing ? (
             reviewBar
           ) : (
-            (
+            <>
               <div className="format-bar">
                 <button
                   className="fmt fmt-b"
@@ -2229,7 +2261,8 @@ function App() {
                   </>
                 )}
               </div>
-            )
+              {reviewBar}
+            </>
           )}
 
           {findOpen && !compare && mode === "preview" && (
@@ -2351,6 +2384,8 @@ function App() {
                 <Suspense fallback={<div className="lazy-fallback" />}>
                   <SplitView
                     key={active.id}
+                    lineMarks={lineMarks}
+                    onPreviewBody={setBodyEl}
                     docId={active.id}
                     sessions={editorSessions.current}
                     onTableChange={setInTable}
@@ -2377,6 +2412,7 @@ function App() {
                 <Suspense fallback={<div className="lazy-fallback" />}>
                   <EditorPane
                     key={active.id}
+                    lineMarks={lineMarks}
                     docId={active.id}
                     sessions={editorSessions.current}
                     onTableChange={setInTable}

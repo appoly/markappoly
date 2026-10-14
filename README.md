@@ -41,7 +41,7 @@ After the first launch the app keeps itself up to date: when a new version ships
 
 Markappoly remembers the version of each file you last read. When a file changes somewhere else (an AI agent rewrites a plan, a teammate's edit arrives with `git pull`), it shows you what moved:
 
-- Changed and added passages are highlighted in the formatted preview, with a marker where text was removed. Hover a change to see what it said before
+- Changed and added passages are highlighted in the formatted preview, with a marker where text was removed. Hover a change to see what it said before. In Edit and Split view the changed lines are marked in the editor too, and F7 moves the cursor from change to change
 - A review bar sums it up ("4 changes in 3 sections"), steps through each change (F7 / ⇧F7), opens a source diff, and clears the highlights with **Mark as reviewed**
 - The outline puts a dot beside every section with unreviewed changes
 - Select any passage to **comment** on it. Comments are kept per file and follow their passage when the file changes
