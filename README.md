@@ -83,7 +83,7 @@ Everything’s tunable from **Settings** (⌘,), with reading preferences first.
 
 **Export:** Text, HTML, JSON (AST), **Word (.docx)**, and PDF, plus **Copy as HTML** for pasting rich text elsewhere. With [Pandoc](https://pandoc.org) installed, also RTF, EPUB, LaTeX, and Pandoc-rendered Word and PDF.
 
-**Native polish:** frosted vibrancy on macOS and acrylic on Windows, system/light/dark themes, a native menu bar, drag-and-drop, "open with" file association, and a window that reopens where you left it.
+**Native polish:** frosted vibrancy on macOS and acrylic on Windows, system/light/dark themes, a native menu bar, drag-and-drop, "open with" file association, and a window that reopens where you left it. On macOS, a **Quick Look** extension renders Markdown when you press Space on a `.md` file in Finder.
 
 For a walkthrough of every feature, see the **[user manual](https://github.com/appoly/markappoly/wiki)**.
 

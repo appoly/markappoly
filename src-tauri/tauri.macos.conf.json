@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBundleCommand": "node scripts/build-quicklook.mjs"
+  },
+  "bundle": {
+    "macOS": {
+      "files": {
+        "PlugIns/MarkappolyQuickLook.appex": "./target/quicklook/MarkappolyQuickLook.appex"
+      }
+    }
+  }
+}
