@@ -128,6 +128,25 @@ fn write_file_base64(path: String, data: String) -> Result<(), String> {
     fs::write(&path, bytes).map_err(|e| e.to_string())
 }
 
+/// Largest file `read_file_base64` will load. Exports inline images as data
+/// URIs; anything bigger than this is almost certainly not a document image.
+const MAX_INLINE_FILE_BYTES: u64 = 50 * 1024 * 1024;
+
+/// Read a binary file as base64 (export inlines local images into standalone
+/// HTML and .docx files).
+#[tauri::command]
+fn read_file_base64(path: String) -> Result<String, String> {
+    let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("Not a file".into());
+    }
+    if meta.len() > MAX_INLINE_FILE_BYTES {
+        return Err("File is too large to embed".into());
+    }
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    Ok(STANDARD.encode(bytes))
+}
+
 /// Last-modified time of a file in milliseconds since the Unix epoch (for live reload).
 #[tauri::command]
 fn file_mtime(path: String) -> Result<u64, String> {
@@ -802,9 +821,11 @@ fn pandoc_available() -> bool {
 }
 
 /// Convert Markdown to any Pandoc-supported format, inferred from the output
-/// file's extension.
+/// file's extension. `doc_path` is the source document, when it has one:
+/// Pandoc runs from its folder with that folder on `--resource-path`, so
+/// relative image references resolve the way they do in the preview.
 #[tauri::command]
-fn export_pandoc(src: String, out_path: String) -> Result<(), String> {
+fn export_pandoc(src: String, out_path: String, doc_path: Option<String>) -> Result<(), String> {
     let pandoc = find_pandoc().ok_or("Pandoc was not found on this system.")?;
     // A private temp file (0600, unique name) rather than a predictable,
     // world-readable path in the shared temp dir; it's removed on drop.
@@ -816,15 +837,19 @@ fn export_pandoc(src: String, out_path: String) -> Result<(), String> {
     use std::io::Write as _;
     tmp.write_all(src.as_bytes()).map_err(|e| e.to_string())?;
 
-    let result = std::process::Command::new(&pandoc)
-        .arg(tmp.path())
-        .arg("-f")
-        .arg("gfm")
-        .arg("-o")
-        .arg(&out_path)
-        .output();
+    let doc_dir = doc_path
+        .as_deref()
+        .and_then(|p| Path::new(p).parent())
+        .filter(|d| d.is_dir());
 
-    match result {
+    let mut cmd = std::process::Command::new(&pandoc);
+    cmd.arg(tmp.path()).arg("-f").arg("gfm").arg("-o").arg(&out_path);
+    if let Some(dir) = doc_dir {
+        cmd.arg(format!("--resource-path={}", dir.display()));
+        cmd.current_dir(dir);
+    }
+
+    match cmd.output() {
         Ok(out) if out.status.success() => Ok(()),
         Ok(out) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
         Err(e) => Err(e.to_string()),
@@ -1089,6 +1114,7 @@ pub fn run() {
             read_file,
             write_file,
             write_file_base64,
+            read_file_base64,
             file_mtime,
             list_markdown_dir,
             index_dir,
