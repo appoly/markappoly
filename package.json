@@ -32,7 +32,7 @@
     "docx": "^9.7.1",
     "github-slugger": "^2.0.0",
     "highlight.js": "^11.11.1",
-    "katex": "^0.16.47",
+    "katex": "^0.19.0",
     "mermaid": "^11.15.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -65,6 +65,7 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "image-size": "npm:dry-uninstall@0.3.0"
+    "image-size": "npm:dry-uninstall@0.3.0",
+    "katex": "$katex"
   }
 }
