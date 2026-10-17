@@ -14,11 +14,12 @@ import type { Root, RootContent } from "hast";
 import { rehypeSourceLines, remarkPluginsFor, sanitizeSchema } from "./renderPipeline";
 import {
   assignSlugs,
+  cachedBlock,
   createBlockProcessor,
   joinBlocks,
   prepareBlock,
-  setHeadingIds,
   splitBlocks,
+  stampBlock,
 } from "./previewBlocks";
 
 const resolveWiki = (t: string) => (t.startsWith("Missing") ? null : `/vault/${t}.md`);
@@ -49,8 +50,8 @@ const wholeHtml = (source: string) =>
 
 function blockHtml(source: string) {
   const parts = splitBlocks(source);
-  const prepared = parts.map((p, i) => prepareBlock(blockProcessor, p.text, `b${i}`));
-  assignSlugs(prepared).forEach((ids, i) => setHeadingIds(prepared[i], ids));
+  const prepared = parts.map((p) => prepareBlock(blockProcessor, p.text));
+  assignSlugs(prepared).forEach((ids, i) => stampBlock(prepared[i], ids, `b${i}`));
   const tree = joinBlocks(prepared, parts.map((p) => p.line));
   dropRootWhitespace()(tree);
   return renderToStaticMarkup(
@@ -105,6 +106,17 @@ describe("block rendering matches whole-document rendering", () => {
       );
     }
     expectParity(sections.join("\n"));
+  });
+});
+
+describe("cachedBlock", () => {
+  it("shares parsed blocks across lookups and drops the least recently used", () => {
+    const first = cachedBlock(blockProcessor, "Shared *block*.");
+    expect(cachedBlock(blockProcessor, "Shared *block*.")).toBe(first);
+    const big = (c: string) => c.repeat(250_000);
+    const a = cachedBlock(blockProcessor, big("a"));
+    cachedBlock(blockProcessor, big("b"));
+    expect(cachedBlock(blockProcessor, big("a"))).not.toBe(a);
   });
 });
 

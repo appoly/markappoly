@@ -18,15 +18,15 @@ import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { Mermaid } from "./Mermaid";
-import { remarkPluginsFor, sliceSection } from "./renderPipeline";
+import { sliceSection } from "./renderPipeline";
 import {
   applyBlockLines,
   assignSlugs,
-  createBlockProcessor,
+  blockProcessorFor,
+  cachedBlock,
   lineNodesOf,
-  prepareBlock,
-  setHeadingIds,
   splitBlocks,
+  stampBlock,
   type BlockProcessor,
   type PreparedBlock,
 } from "./previewBlocks";
@@ -310,10 +310,7 @@ function PreviewInner({
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
   };
 
-  const processor = useMemo(
-    () => createBlockProcessor(remarkPluginsFor(resolveWiki)),
-    [resolveWiki],
-  );
+  const processor = blockProcessorFor(resolveWiki);
 
   // Block elements are memoised across renders, so their handlers read the
   // latest callbacks from here rather than closing over stale props.
@@ -474,7 +471,7 @@ function PreviewInner({
       if (!entry) {
         const id = prefix + c.seq++;
         entry = {
-          ...prepareBlock(processor, part.text, id),
+          ...cachedBlock(processor, part.text),
           id,
           ids: null,
           element: null,
@@ -493,7 +490,7 @@ function PreviewInner({
       const entry = entries[i];
       const key = ids.join("\n");
       if (entry.element && entry.ids === key) return;
-      setHeadingIds(entry, ids);
+      stampBlock(entry, ids, entry.id);
       entry.ids = key;
       entry.element = trackTopNodes(
         toJsxRuntime(entry.hast, {

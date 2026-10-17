@@ -19,7 +19,7 @@ import { defaultUrlTransform } from "react-markdown";
 import { urlAttributes } from "html-url-attributes";
 import GithubSlugger from "github-slugger";
 import type { Element, ElementContent, Root, RootContent } from "hast";
-import { rehypeSourceLines, sanitizeSchema } from "./renderPipeline";
+import { rehypeSourceLines, remarkPluginsFor, sanitizeSchema } from "./renderPipeline";
 
 export type SourceBlock = {
   text: string;
@@ -124,6 +124,23 @@ export const blockRehypePlugins: PluggableList = [
 
 export type BlockProcessor = Processor<any, any, any, any, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
+const processors = new WeakMap<object, BlockProcessor>();
+let plainProcessor: BlockProcessor | null = null;
+
+/**
+ * One processor per wiki resolver, shared by every preview, so blocks parsed
+ * for one view (the reader, Split view, an embed) are reused by the others.
+ */
+export function blockProcessorFor(resolveWiki?: (target: string) => string | null): BlockProcessor {
+  if (!resolveWiki) return (plainProcessor ??= createBlockProcessor(remarkPluginsFor()));
+  let processor = processors.get(resolveWiki);
+  if (!processor) {
+    processor = createBlockProcessor(remarkPluginsFor(resolveWiki));
+    processors.set(resolveWiki, processor);
+  }
+  return processor;
+}
+
 export function createBlockProcessor(remarkPlugins: PluggableList): BlockProcessor {
   return unified()
     .use(remarkParse)
@@ -146,11 +163,10 @@ function textOf(node: Element | ElementContent): string {
 }
 
 /**
- * Parse one block to hast, applying react-markdown's own post-processing (raw
- * HTML that survived becomes text, URLs go through its safe-URL transform) and
- * tagging the top-level elements with `blockId`.
+ * Parse one block to hast, applying react-markdown's own post-processing: raw
+ * HTML that survived becomes text, URLs go through its safe-URL transform.
  */
-export function prepareBlock(processor: BlockProcessor, text: string, blockId: string): PreparedBlock {
+export function prepareBlock(processor: BlockProcessor, text: string): PreparedBlock {
   const hast = processor.runSync(processor.parse(text)) as Root;
   const headings: Element[] = [];
   const walk = (parent: Root | Element) => {
@@ -171,22 +187,51 @@ export function prepareBlock(processor: BlockProcessor, text: string, blockId: s
     });
   };
   walk(hast);
-  for (const child of hast.children) {
+  return { hast, headings, headingTexts: headings.map(textOf) };
+}
+
+/** Parsed blocks are reused across previews, least recently used first out. */
+const CACHE_CHARS = 400_000;
+type ParsedCache = { blocks: Map<string, PreparedBlock>; chars: number };
+const parsed = new WeakMap<BlockProcessor, ParsedCache>();
+
+export function cachedBlock(processor: BlockProcessor, text: string): PreparedBlock {
+  let cache = parsed.get(processor);
+  if (!cache) parsed.set(processor, (cache = { blocks: new Map(), chars: 0 }));
+  let block = cache.blocks.get(text);
+  if (block) {
+    cache.blocks.delete(text);
+  } else {
+    block = prepareBlock(processor, text);
+    cache.chars += text.length;
+    for (const old of cache.blocks.keys()) {
+      if (cache.chars <= CACHE_CHARS) break;
+      cache.blocks.delete(old);
+      cache.chars -= old.length;
+    }
+  }
+  cache.blocks.set(text, block);
+  return block;
+}
+
+/**
+ * Point a block's hast at one rendering of it: its heading ids and the block
+ * id on its top-level elements. A parsed block can be shared (identical blocks,
+ * several previews), so call this right before converting it.
+ */
+export function stampBlock(block: PreparedBlock, ids: string[], blockId: string) {
+  block.headings.forEach((h, i) => {
+    h.properties.id = ids[i];
+  });
+  for (const child of block.hast.children) {
     if (child.type === "element") child.properties["data-blk"] = blockId;
   }
-  return { hast, headings, headingTexts: headings.map(textOf) };
 }
 
 /** Heading ids for every block, deduplicated across the whole document. */
 export function assignSlugs(blocks: Pick<PreparedBlock, "headingTexts">[]): string[][] {
   const slugger = new GithubSlugger();
   return blocks.map((b) => b.headingTexts.map((t) => slugger.slug(t)));
-}
-
-export function setHeadingIds(block: PreparedBlock, ids: string[]) {
-  block.headings.forEach((h, i) => {
-    h.properties.id = ids[i];
-  });
 }
 
 /** Hast for the whole document from its blocks, with absolute lines (tests). */
