@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { whenPreviewsComplete } from "./markdown";
 
 // CSS Custom Highlight API (not yet in TS lib types).
 declare const Highlight: {
@@ -36,9 +37,16 @@ export function FindBar({
     if (!reg || !container) return;
     reg.delete("find");
     reg.delete("find-current");
+    if (!query) {
+      rangesRef.current = [];
+      setCount(0);
+      setCurrent(-1);
+      return;
+    }
 
-    const ranges: Range[] = [];
-    if (query) {
+    // Search the whole document, not just the part rendered so far.
+    const cancel = whenPreviewsComplete(() => {
+      const ranges: Range[] = [];
       const q = query.toLowerCase();
       const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
       let node: Node | null;
@@ -53,17 +61,18 @@ export function FindBar({
           idx = text.indexOf(q, idx + query.length);
         }
       }
-    }
 
-    rangesRef.current = ranges;
-    setCount(ranges.length);
-    setCurrent(ranges.length ? 0 : -1);
-    if (ranges.length) {
-      reg.set("find", new Highlight(...ranges));
-      focusRange(0, ranges);
-    }
+      rangesRef.current = ranges;
+      setCount(ranges.length);
+      setCurrent(ranges.length ? 0 : -1);
+      if (ranges.length) {
+        reg.set("find", new Highlight(...ranges));
+        focusRange(0, ranges);
+      }
+    });
 
     return () => {
+      cancel();
       reg.delete("find");
       reg.delete("find-current");
     };

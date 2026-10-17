@@ -17,7 +17,14 @@ import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import type { EditorView } from "@codemirror/view";
-import { extractHeadings, type Heading, Preview } from "./markdown";
+import {
+  extractHeadings,
+  finishPreviews,
+  type Heading,
+  Preview,
+  previewsPending,
+  whenPreviewsComplete,
+} from "./markdown";
 import { FindBar } from "./FindBar";
 import { Sidebar, type FileEntry } from "./Sidebar";
 import { QuickSwitcher, type Command } from "./QuickSwitcher";
@@ -369,11 +376,12 @@ function App() {
       return;
     }
     // Footnotes and explicit HTML ids aren't headings: look in the DOM.
-    requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      finishPreviews();
       document
         .getElementById(fragment)
-        ?.scrollIntoView({ block: "start", behavior: "smooth" }),
-    );
+        ?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
   }, []);
 
   /**
@@ -414,6 +422,7 @@ function App() {
       const open = docsRef.current.find((d) => d.id === entry.docId);
       const restore = () =>
         requestAnimationFrame(() => {
+          finishPreviews();
           if (contentRef.current) contentRef.current.scrollTop = entry.scroll;
         });
       if (open) {
@@ -511,11 +520,21 @@ function App() {
   );
   useEffect(() => {
     if (mode !== "preview" || !contentEl) return;
-    contentEl.scrollTop = previewPositions.current.get(active.id) ?? 0;
+    const saved = previewPositions.current.get(active.id) ?? 0;
+    // A saved position further down needs the whole document rendered.
+    let cancel = () => {};
+    if (saved > 0) {
+      cancel = whenPreviewsComplete(() => {
+        contentEl.scrollTop = saved;
+      });
+    } else contentEl.scrollTop = 0;
     const remember = () =>
       previewPositions.current.set(active.id, contentEl.scrollTop);
     contentEl.addEventListener("scroll", remember);
-    return () => contentEl.removeEventListener("scroll", remember);
+    return () => {
+      cancel();
+      contentEl.removeEventListener("scroll", remember);
+    };
   }, [active.id, mode, contentEl]);
   useEffect(() => {
     if (!lineTarget || lineTarget.path !== filePath) return;
@@ -523,21 +542,23 @@ function App() {
       if (cmRef.current?.view) editorReady(cmRef.current.view);
       return;
     }
-    const blocks = Array.from(
-      contentEl?.querySelectorAll<HTMLElement>("[data-source-line]") ?? [],
-    );
-    const el = blocks
-      .filter((block) => Number(block.dataset.sourceLine) <= lineTarget.line)
-      .slice(-1)[0];
-    if (el) {
-      let parent = el.parentElement;
-      while (parent && parent !== contentEl) {
-        if (parent instanceof HTMLDetailsElement) parent.open = true;
-        parent = parent.parentElement;
-      }
-      el.scrollIntoView({ block: lineTarget.align ?? "center" });
-    } else if (contentEl) contentEl.scrollTop = 0;
-    setLineTarget(null);
+    return whenPreviewsComplete(() => {
+      const blocks = Array.from(
+        contentEl?.querySelectorAll<HTMLElement>("[data-source-line]") ?? [],
+      );
+      const el = blocks
+        .filter((block) => Number(block.dataset.sourceLine) <= lineTarget.line)
+        .slice(-1)[0];
+      if (el) {
+        let parent = el.parentElement;
+        while (parent && parent !== contentEl) {
+          if (parent instanceof HTMLDetailsElement) parent.open = true;
+          parent = parent.parentElement;
+        }
+        el.scrollIntoView({ block: lineTarget.align ?? "center" });
+      } else if (contentEl) contentEl.scrollTop = 0;
+      setLineTarget(null);
+    });
   }, [lineTarget, filePath, mode, headings, contentEl, editorReady]);
 
   const openFile = useCallback(async () => {
@@ -822,6 +843,7 @@ function App() {
         // Print once diagrams, embeds, images and fonts have finished, with
         // print-only CSS (page breaks on hr).
         const { waitForPrintReady } = await import("./printReady");
+        finishPreviews();
         await waitForPrintReady(() => contentRef.current?.querySelector(".markdown-body") ?? null);
         window.print();
         return;
@@ -1250,6 +1272,7 @@ function App() {
           view.focus();
         }
       } else {
+        finishPreviews();
         document
           .getElementById(h.slug)
           ?.scrollIntoView({
@@ -1778,7 +1801,12 @@ function App() {
       setReviewIndex(next);
       if (modeRef.current !== "preview" && filePath)
         setLineTarget({ path: filePath, line: Math.max(1, hunks[next].start) });
-      requestAnimationFrame(() => flash(changeTargets.current[next]));
+      requestAnimationFrame(() => {
+        if (!previewsPending()) return flash(changeTargets.current[next]);
+        finishPreviews();
+        // The marks are re-applied a frame after the new blocks land.
+        queueMicrotask(() => requestAnimationFrame(() => flash(changeTargets.current[next])));
+      });
     },
     [hunks, reviewIndex, reviewDiff, filePath],
   );

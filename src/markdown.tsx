@@ -4,6 +4,7 @@ import {
   Fragment,
   isValidElement,
   memo,
+  startTransition,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -12,6 +13,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import { jsx, jsxs } from "react/jsx-runtime";
 import type { Components } from "react-markdown";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
@@ -29,6 +31,7 @@ import {
   stampBlock,
   type BlockProcessor,
   type PreparedBlock,
+  type SourceBlock,
 } from "./previewBlocks";
 import {
   basename,
@@ -99,8 +102,46 @@ type BlockCache = {
   components: Components;
   byText: Map<string, BlockEntry[]>;
   seq: number;
+  /** The pass that first rendered the current split source. */
+  first?: { parts: SourceBlock[]; pass: number; isEdit: boolean };
 };
 let previewSeq = 0;
+
+/**
+ * New blocks (in characters of source) one rendering pass adds: the first
+ * pass fills a screen or two, later ones stay short enough not to stall
+ * scrolling while the rest arrives.
+ */
+const FIRST_PASS_CHARS = 16_000;
+const PASS_CHARS = 8_000;
+const pendingPreviews = new Set<() => void>();
+
+/**
+ * Render every partly rendered preview in full, synchronously. Call it before
+ * looking up preview content (ids, source lines) from an event handler or
+ * timer; effects should use whenPreviewsComplete instead.
+ */
+export function finishPreviews() {
+  if (pendingPreviews.size === 0) return;
+  flushSync(() => pendingPreviews.forEach((finish) => finish()));
+}
+
+export function previewsPending(): boolean {
+  return pendingPreviews.size > 0;
+}
+
+/** Run `fn` once every preview is fully rendered. Returns a cancel function. */
+export function whenPreviewsComplete(fn: () => void): () => void {
+  if (pendingPreviews.size === 0) {
+    fn();
+    return () => {};
+  }
+  const timer = window.setTimeout(() => {
+    finishPreviews();
+    fn();
+  });
+  return () => window.clearTimeout(timer);
+}
 
 /** Give each top-level element of a block a ref that records its DOM node. */
 function trackTopNodes(root: ReactElement, entry: BlockEntry): ReactElement {
@@ -425,6 +466,7 @@ function PreviewInner({
               const hash = url.indexOf("#");
               const fragment = hash >= 0 ? url.slice(hash) : "";
               if (url.startsWith("#")) {
+                finishPreviews();
                 const target = document.getElementById(decodeURIComponent(url.slice(1)));
                 if (target) {
                   live.current.onBeforeNavigate?.();
@@ -459,16 +501,38 @@ function PreviewInner({
   // shift (a duplicate heading added above it), never just because it moved.
   const prefix = useState(() => `p${++previewSeq}-`)[0];
   const cache = useRef<BlockCache>({ processor, components, byText: new Map(), seq: 0 });
-  const blocks = useMemo(() => {
+  // A newly shown long document renders in passes, first screen first: each
+  // pass adds up to PASS_CHARS of new blocks, and the rest follows in later
+  // frames. `pass` only asks the memo below for the next slice.
+  const [pass, setPass] = useState(0);
+  const renderAll = useRef(false);
+  const parts = useMemo(() => splitBlocks(source), [source]);
+  const { blocks, complete } = useMemo(() => {
     const c = cache.current;
     if (c.processor !== processor || c.components !== components) {
       Object.assign(c, { processor, components, byText: new Map() });
     }
-    const parts = splitBlocks(source);
     const next = new Map<string, BlockEntry[]>();
-    const entries = parts.map((part) => {
+    const entries: BlockEntry[] = [];
+    // The first pass over new text gets a screenful; later passes a slice.
+    // An edit to the document on screen (most blocks reused) renders whole,
+    // so nothing below the edit drops out while the rest catches up.
+    if (c.first?.parts !== parts) {
+      const reused = parts.filter((part) => c.byText.has(part.text)).length;
+      c.first = { parts, pass, isEdit: reused * 2 >= parts.length };
+    }
+    let budget =
+      renderAll.current || c.first.isEdit
+        ? Infinity
+        : c.first.pass === pass
+          ? FIRST_PASS_CHARS
+          : PASS_CHARS;
+    for (const part of parts) {
       let entry = c.byText.get(part.text)?.shift();
       if (!entry) {
+        // Count all new blocks, parsed before or not: they all cost DOM work.
+        if (budget <= 0) break;
+        budget -= part.text.length;
         const id = prefix + c.seq++;
         entry = {
           ...cachedBlock(processor, part.text),
@@ -483,8 +547,8 @@ function PreviewInner({
       const same = next.get(part.text);
       if (same) same.push(entry);
       else next.set(part.text, [entry]);
-      return entry;
-    });
+      entries.push(entry);
+    }
     c.byText = next;
     assignSlugs(entries).forEach((ids, i) => {
       const entry = entries[i];
@@ -505,8 +569,30 @@ function PreviewInner({
         entry,
       );
     });
-    return entries.map((entry, i) => ({ entry, line: parts[i].line }));
-  }, [source, processor, components, prefix]);
+    return {
+      blocks: entries.map((entry, i) => ({ entry, line: parts[i].line })),
+      complete: entries.length === parts.length,
+    };
+  }, [parts, processor, components, prefix, pass]);
+
+  // Schedule the next pass after this one paints; finishPreviews() can force
+  // the rest synchronously for anything that needs the whole document.
+  useEffect(() => {
+    if (complete) {
+      renderAll.current = false;
+      return;
+    }
+    const finish = () => {
+      renderAll.current = true;
+      setPass((n) => n + 1);
+    };
+    pendingPreviews.add(finish);
+    const timer = window.setTimeout(() => startTransition(() => setPass((n) => n + 1)));
+    return () => {
+      pendingPreviews.delete(finish);
+      window.clearTimeout(timer);
+    };
+  }, [blocks, complete]);
 
   // Block-relative lines become absolute data-source-lines before paint, only
   // for blocks that moved or were (re)rendered.

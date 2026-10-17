@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { Preview } from "./markdown";
+import { finishPreviews, Preview, previewsPending, whenPreviewsComplete } from "./markdown";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -61,5 +61,60 @@ describe("incremental preview", () => {
     ]);
     await render("A\n\n## Setup");
     expect(host.querySelector("h2")!.id).toBe("setup");
+  });
+});
+
+describe("progressive rendering of long documents", () => {
+  const long = Array.from({ length: 400 }, (_, i) => `## Part ${i}\n\nUnique paragraph number ${i} with some *text* in it.`).join("\n\n");
+
+  it("paints the start first and completes on its own", async () => {
+    const { host, render } = mount();
+    await render(long);
+    const first = host.querySelectorAll("h2").length;
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(400);
+    expect(previewsPending()).toBe(true);
+    for (let i = 0; i < 100 && previewsPending(); i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+    expect(previewsPending()).toBe(false);
+    expect(host.querySelectorAll("h2").length).toBe(400);
+    expect(host.querySelector<HTMLElement>("#part-399")?.dataset.sourceLine).toBe("1597");
+  });
+
+  it("finishes synchronously for lookups that need the whole document", async () => {
+    const { host, render } = mount();
+    await render(long.replace(/Unique/g, "Other"));
+    expect(previewsPending()).toBe(true);
+    act(() => finishPreviews());
+    expect(previewsPending()).toBe(false);
+    expect(document.getElementById("part-399")).not.toBeNull();
+    expect(host.querySelectorAll("h2").length).toBe(400);
+  });
+
+  it("renders an edit that touches many blocks in one go", async () => {
+    const { host, render } = mount();
+    const doc = long.replace(/Unique/g, "Fourth");
+    await render(doc);
+    act(() => finishPreviews());
+    await render(doc.replace(/some \*text\*/g, "other *text*"));
+    expect(previewsPending()).toBe(false);
+    expect(host.querySelectorAll("h2").length).toBe(400);
+  });
+
+  it("runs waiting callbacks once the document is complete", async () => {
+    const { host, render } = mount();
+    await render(long.replace(/Unique/g, "Third"));
+    let seen = -1;
+    whenPreviewsComplete(() => {
+      seen = host.querySelectorAll("h2").length;
+    });
+    expect(seen).toBe(-1);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(seen).toBe(400);
   });
 });
