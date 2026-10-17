@@ -6,11 +6,7 @@
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import remarkFrontmatter from "remark-frontmatter";
-import rehypeRaw from "rehype-raw";
-import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import rehypeKatex from "rehype-katex";
-import rehypeSlug from "rehype-slug";
-import rehypeHighlight from "rehype-highlight";
+import { defaultSchema } from "rehype-sanitize";
 import type { PluggableList } from "unified";
 import GithubSlugger from "github-slugger";
 import { remarkObsidian } from "./remarkObsidian";
@@ -128,28 +124,20 @@ export function remarkAlerts() {
   return (tree: any) => walk(tree);
 }
 
-export function rehypeSourceLines() {
+/** Mark each element with its 1-based source line, under `attribute`. */
+export function rehypeSourceLines(options?: { attribute?: string }) {
+  const attribute = options?.attribute ?? "data-source-line";
   type Node = { type: string; position?: { start: { line: number } }; properties?: Record<string, unknown>; children?: Node[] };
   return (tree: Node) => {
     const visit = (node: Node) => {
       if (node.type === "element" && node.position) {
-        node.properties = { ...node.properties, "data-source-line": node.position.start.line };
+        node.properties = { ...node.properties, [attribute]: node.position.start.line };
       }
       node.children?.forEach(visit);
     };
     visit(tree);
   };
 }
-
-/** Rehype plugins for the live preview (adds source-line markers last). */
-export const previewRehypePlugins: PluggableList = [
-  rehypeRaw,
-  [rehypeSanitize, sanitizeSchema],
-  rehypeKatex,
-  rehypeSlug,
-  rehypeHighlight,
-  rehypeSourceLines,
-];
 
 /** The remark (Markdown-side) plugins, identical for preview and export. */
 export function remarkPluginsFor(resolveWiki?: (target: string) => string | null): PluggableList {

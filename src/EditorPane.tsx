@@ -224,8 +224,9 @@ export function SplitView({
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
-  // Debounce the preview so typing stays snappy on large documents.
-  const previewSource = useDebouncedValue(editor.value, 140);
+  // The preview re-renders only edited blocks; a short debounce still batches
+  // bursts of keystrokes into one update.
+  const previewSource = useDebouncedValue(editor.value, 50);
 
   useEffect(() => {
     const scroller = editor.cmRef.current?.view?.scrollDOM;

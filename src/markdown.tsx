@@ -1,10 +1,35 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import type { PluggableList } from "unified";
+import {
+  Children,
+  cloneElement,
+  Fragment,
+  isValidElement,
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
+import { jsx, jsxs } from "react/jsx-runtime";
+import type { Components } from "react-markdown";
+import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { Mermaid } from "./Mermaid";
-import { previewRehypePlugins, remarkPluginsFor, sliceSection } from "./renderPipeline";
+import { remarkPluginsFor, sliceSection } from "./renderPipeline";
+import {
+  applyBlockLines,
+  assignSlugs,
+  createBlockProcessor,
+  lineNodesOf,
+  prepareBlock,
+  setHeadingIds,
+  splitBlocks,
+  type BlockProcessor,
+  type PreparedBlock,
+} from "./previewBlocks";
 import {
   basename,
   dirOf,
@@ -56,6 +81,46 @@ type PreviewProps = {
   /** Nesting level: 0 = top-level document, >0 = embed/hover content. */
   depth?: number;
 };
+
+type BlockEntry = PreparedBlock & {
+  id: string;
+  /** Heading ids the element was built with. */
+  ids: string | null;
+  element: ReactElement | null;
+  /** The element's rendered top-level DOM nodes. */
+  nodes: Set<HTMLElement>;
+  /** Those nodes and their descendants that carry a line (null: stale). */
+  lineNodes: HTMLElement[] | null;
+  /** The start line last written into `nodes` (-1: not yet). */
+  line: number;
+};
+type BlockCache = {
+  processor: BlockProcessor;
+  components: Components;
+  byText: Map<string, BlockEntry[]>;
+  seq: number;
+};
+let previewSeq = 0;
+
+/** Give each top-level element of a block a ref that records its DOM node. */
+function trackTopNodes(root: ReactElement, entry: BlockEntry): ReactElement {
+  const ref = (el: HTMLElement | null) => {
+    if (!el) return;
+    entry.nodes.add(el);
+    entry.lineNodes = null;
+    entry.line = -1;
+    return () => {
+      entry.nodes.delete(el);
+      entry.lineNodes = null;
+    };
+  };
+  const { children } = root.props as { children?: ReactNode };
+  return cloneElement(
+    root,
+    undefined,
+    Children.map(children, (child) => (isValidElement(child) ? cloneElement(child, { ref } as object) : child)),
+  );
+}
 
 const MAX_EMBED_DEPTH = 3;
 const noopTask = () => {};
@@ -245,10 +310,15 @@ function PreviewInner({
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
   };
 
-  const remarkPlugins = useMemo<PluggableList>(
-    () => remarkPluginsFor(resolveWiki),
+  const processor = useMemo(
+    () => createBlockProcessor(remarkPluginsFor(resolveWiki)),
     [resolveWiki],
   );
+
+  // Block elements are memoised across renders, so their handlers read the
+  // latest callbacks from here rather than closing over stale props.
+  const live = useRef({ onToggleTask, onOpenLocal, onBeforeNavigate, onTagClick });
+  live.current = { onToggleTask, onOpenLocal, onBeforeNavigate, onTagClick };
 
   /** Absolute local file behind a preview link, or null for web/anchor links. */
   /** Any local file a link points at (without its fragment), or null. */
@@ -262,131 +332,201 @@ function PreviewInner({
   const localTargetOf = (url: string): string | null =>
     isLocalMarkdownHref(url) ? localFileOf(url) : null;
 
-  const components: Components = {
-    code({ node: _node, className, children, ...rest }) {
-      if (className === "language-mermaid") {
-        return <Mermaid code={String(children).replace(/\n$/, "")} dark={dark} />;
-      }
-      return (
-        <code className={className} {...rest}>
-          {children}
-        </code>
-      );
-    },
-    img({ node: _node, src, alt, ...rest }) {
-      return (
-        <img
-          src={resolveImageSrc(typeof src === "string" ? src : "", basePath, blockRemoteImages)}
-          alt={alt}
-          {...rest}
-        />
-      );
-    },
-    input({ node: _node, ...props }) {
-      if (props.type === "checkbox") {
-        // The enclosing <li> carries its source line (rehypeSourceLines), which
-        // maps the click back to the right task even past code samples.
+  const components = useMemo<Components>(() => {
+    const openLocal = (path: string) => live.current.onOpenLocal?.(path);
+    const tagClick = (tag: string) => live.current.onTagClick?.(tag);
+    return {
+      code({ node: _node, className, children, ...rest }) {
+        if (className === "language-mermaid") {
+          return <Mermaid code={String(children).replace(/\n$/, "")} dark={dark} />;
+        }
         return (
-          <input
-            type="checkbox"
-            checked={!!props.checked}
-            onChange={(e) => {
-              const line = Number(e.currentTarget.closest("li")?.dataset.sourceLine);
-              if (line) onToggleTask(line);
-            }}
+          <code className={className} {...rest}>
+            {children}
+          </code>
+        );
+      },
+      img({ node: _node, src, alt, ...rest }) {
+        return (
+          <img
+            src={resolveImageSrc(typeof src === "string" ? src : "", basePath, blockRemoteImages)}
+            alt={alt}
+            {...rest}
           />
         );
-      }
-      return <input {...props} />;
-    },
-    span({ node: _node, className, children, ...rest }) {
-      const cls = String(className ?? "");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const attrs = rest as any;
-      if (cls.includes("md-tag")) {
-        const tag = String(attrs["data-tag"] ?? "");
-        return (
-          <span
-            className={cls}
-            role="button"
-            tabIndex={0}
-            onClick={() => tag && onTagClick?.(tag)}
-          >
-            {children}
-          </span>
-        );
-      }
-      if (cls.includes("wiki-embed")) {
-        const target = String(attrs["data-embed-target"] ?? "");
-        if (target) {
+      },
+      input({ node: _node, ...props }) {
+        if (props.type === "checkbox") {
+          // The enclosing <li> carries its source line (rehypeSourceLines), which
+          // maps the click back to the right task even past code samples.
           return (
-            <EmbedNote
-              path={target}
-              anchor={String(attrs["data-embed-anchor"] ?? "")}
-              label={String(attrs["data-embed-label"] ?? "")}
-              depth={depth}
-              dark={dark}
-              basePassthrough={{ onOpenLocal, blockRemoteImages, resolveWiki, onTagClick }}
+            <input
+              type="checkbox"
+              checked={!!props.checked}
+              onChange={(e) => {
+                const line = Number(e.currentTarget.closest("li")?.dataset.sourceLine);
+                if (line) live.current.onToggleTask(line);
+              }}
             />
           );
         }
-      }
-      return (
-        <span className={className} {...rest}>
-          {children}
-        </span>
-      );
-    },
-    a({ node: _node, href, children, ...rest }) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const wikiTarget = (rest as any)["data-wiki-target"] as string | undefined;
-      const url = wikiTarget || (href ?? "");
-      const local = localTargetOf(url);
-      return (
-        <a
-          href={url}
-          onClick={(e) => {
-            e.preventDefault();
-            const hash = url.indexOf("#");
-            const fragment = hash >= 0 ? url.slice(hash) : "";
-            if (url.startsWith("#")) {
-              const target = document.getElementById(decodeURIComponent(url.slice(1)));
-              if (target) {
-                onBeforeNavigate?.();
-                target.scrollIntoView({ behavior: "smooth", block: "start" });
-              }
-            } else if (SAFE_LINK.test(url)) {
-              openUrl(url).catch(() => {});
-            } else if (onOpenLocal) {
-              // Markdown opens as a document; other files are routed by the
-              // app (code view, or a PDF/image in its default app).
-              const file = local ?? localFileOf(url);
-              if (file) onOpenLocal(file + fragment);
-            }
-          }}
-          onMouseEnter={
-            depth === 0 && local
-              ? (e) => beginHover(local, e.clientX, e.clientY)
-              : undefined
+        return <input {...props} />;
+      },
+      span({ node: _node, className, children, ...rest }) {
+        const cls = String(className ?? "");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const attrs = rest as any;
+        if (cls.includes("md-tag")) {
+          const tag = String(attrs["data-tag"] ?? "");
+          return (
+            <span
+              className={cls}
+              role="button"
+              tabIndex={0}
+              onClick={() => tag && tagClick(tag)}
+            >
+              {children}
+            </span>
+          );
+        }
+        if (cls.includes("wiki-embed")) {
+          const target = String(attrs["data-embed-target"] ?? "");
+          if (target) {
+            return (
+              <EmbedNote
+                path={target}
+                anchor={String(attrs["data-embed-anchor"] ?? "")}
+                label={String(attrs["data-embed-label"] ?? "")}
+                depth={depth}
+                dark={dark}
+                basePassthrough={{
+                  onOpenLocal: openLocal,
+                  blockRemoteImages,
+                  resolveWiki,
+                  onTagClick: tagClick,
+                }}
+              />
+            );
           }
-          onMouseLeave={depth === 0 && local ? endHover : undefined}
-          {...rest}
-        >
-          {children}
-        </a>
+        }
+        return (
+          <span className={className} {...rest}>
+            {children}
+          </span>
+        );
+      },
+      a({ node: _node, href, children, ...rest }) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const wikiTarget = (rest as any)["data-wiki-target"] as string | undefined;
+        const url = wikiTarget || (href ?? "");
+        const local = localTargetOf(url);
+        return (
+          <a
+            href={url}
+            onClick={(e) => {
+              e.preventDefault();
+              const hash = url.indexOf("#");
+              const fragment = hash >= 0 ? url.slice(hash) : "";
+              if (url.startsWith("#")) {
+                const target = document.getElementById(decodeURIComponent(url.slice(1)));
+                if (target) {
+                  live.current.onBeforeNavigate?.();
+                  target.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+              } else if (SAFE_LINK.test(url)) {
+                openUrl(url).catch(() => {});
+              } else if (live.current.onOpenLocal) {
+                // Markdown opens as a document; other files are routed by the
+                // app (code view, or a PDF/image in its default app).
+                const file = local ?? localFileOf(url);
+                if (file) openLocal(file + fragment);
+              }
+            }}
+            onMouseEnter={
+              depth === 0 && local
+                ? (e) => beginHover(local, e.clientX, e.clientY)
+                : undefined
+            }
+            onMouseLeave={depth === 0 && local ? endHover : undefined}
+            {...rest}
+          >
+            {children}
+          </a>
+        );
+      },
+    };
+  }, [dark, basePath, blockRemoteImages, resolveWiki, depth]);
+
+  // Reuse the previous render's blocks by text: only new or edited blocks are
+  // parsed. Heading ids are document-wide, so a block is rebuilt when its ids
+  // shift (a duplicate heading added above it), never just because it moved.
+  const prefix = useState(() => `p${++previewSeq}-`)[0];
+  const cache = useRef<BlockCache>({ processor, components, byText: new Map(), seq: 0 });
+  const blocks = useMemo(() => {
+    const c = cache.current;
+    if (c.processor !== processor || c.components !== components) {
+      Object.assign(c, { processor, components, byText: new Map() });
+    }
+    const parts = splitBlocks(source);
+    const next = new Map<string, BlockEntry[]>();
+    const entries = parts.map((part) => {
+      let entry = c.byText.get(part.text)?.shift();
+      if (!entry) {
+        const id = prefix + c.seq++;
+        entry = {
+          ...prepareBlock(processor, part.text, id),
+          id,
+          ids: null,
+          element: null,
+          nodes: new Set(),
+          lineNodes: null,
+          line: -1,
+        };
+      }
+      const same = next.get(part.text);
+      if (same) same.push(entry);
+      else next.set(part.text, [entry]);
+      return entry;
+    });
+    c.byText = next;
+    assignSlugs(entries).forEach((ids, i) => {
+      const entry = entries[i];
+      const key = ids.join("\n");
+      if (entry.element && entry.ids === key) return;
+      setHeadingIds(entry, ids);
+      entry.ids = key;
+      entry.element = trackTopNodes(
+        toJsxRuntime(entry.hast, {
+          Fragment,
+          jsx,
+          jsxs,
+          components,
+          ignoreInvalidStyle: true,
+          passKeys: true,
+          passNode: true,
+        }),
+        entry,
       );
-    },
-  };
+    });
+    return entries.map((entry, i) => ({ entry, line: parts[i].line }));
+  }, [source, processor, components, prefix]);
+
+  // Block-relative lines become absolute data-source-lines before paint, only
+  // for blocks that moved or were (re)rendered.
+  useLayoutEffect(() => {
+    for (const { entry, line } of blocks) {
+      if (entry.line === line) continue;
+      entry.lineNodes ??= lineNodesOf(entry.nodes);
+      applyBlockLines(entry.lineNodes, line);
+      entry.line = line;
+    }
+  }, [blocks]);
 
   return (
     <>
-      <ReactMarkdown
-        remarkPlugins={remarkPlugins}
-        rehypePlugins={previewRehypePlugins}
-        components={components}
-      >
-        {source}
-      </ReactMarkdown>
+      {blocks.map(({ entry }) => (
+        <Fragment key={entry.id}>{entry.element}</Fragment>
+      ))}
       {hover && depth === 0 && (
         <HoverCard
           path={hover.path}
