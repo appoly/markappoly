@@ -1,6 +1,6 @@
 [package]
 name = "markdown-viewer"
-version = "0.11.2"
+version = "0.12.0"
 description = "A fast, cross-platform Markdown viewer and editor built with Tauri."
 authors = ["Appoly Ltd"]
 edition = "2021"
