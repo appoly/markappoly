@@ -1283,6 +1283,10 @@ body {
 .switch.on {
   background: var(--accent);
 }
+.switch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .switch-knob {
   position: absolute;
   top: 2px;

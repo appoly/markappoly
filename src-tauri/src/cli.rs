@@ -33,6 +33,11 @@ Open Markdown files and folders in Markappoly.
   markappoly guide.md#install       open a file at a heading
   some-command | markappoly         show piped output, updating as it streams
   markappoly - < draft.md           read from stdin explicitly
+  markappoly hook                   open what a coding agent wrote (see below)
+
+`markappoly hook` is run by coding agents (Claude Code, Codex, Cursor) after
+they edit a file. It reads the agent's hook payload from stdin and opens the
+file if it's Markdown. Turn it on in Markappoly's Settings, under Agents.
 
 Options:
   -h, --help       show this help
@@ -134,6 +139,10 @@ pub fn run_launcher_if_requested() -> Option<i32> {
 }
 
 fn run_launcher(args: &[String]) -> i32 {
+    if args.first().map(String::as_str) == Some(HOOK_COMMAND) {
+        run_hook();
+        return 0;
+    }
     let cwd = std::env::current_dir().unwrap_or_default();
     let mut resolved = resolve_args(args, &cwd);
     if resolved.help {
@@ -183,17 +192,20 @@ fn run_launcher(args: &[String]) -> i32 {
     0
 }
 
+/// The file to run to start the app. An AppImage runs from a temporary mount
+/// that disappears when this process exits, so that's the AppImage file
+/// itself rather than the binary inside the mount.
+pub fn app_binary() -> io::Result<PathBuf> {
+    std::env::var_os("APPIMAGE")
+        .map(PathBuf::from)
+        .map_or_else(std::env::current_exe, Ok)
+}
+
 /// Start the app with `targets` in its own process group, detached from the
 /// terminal. If the app is already running, the single-instance plugin hands
 /// the targets to it and the new process exits.
 fn spawn_app(targets: &[String]) -> io::Result<()> {
-    // An AppImage runs from a temporary mount that disappears when this
-    // launcher exits, so start the AppImage file itself rather than the
-    // binary inside the mount.
-    let exe = std::env::var_os("APPIMAGE")
-        .map(PathBuf::from)
-        .map_or_else(std::env::current_exe, Ok)?;
-    let mut cmd = Command::new(exe);
+    let mut cmd = Command::new(app_binary()?);
     cmd.args(targets)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -305,6 +317,109 @@ fn attach_parent_console() {
     unsafe {
         AttachConsole(ATTACH_PARENT_PROCESS);
     }
+}
+
+// ---------- Agent hooks ----------
+
+/// Subcommand run by coding agents' hooks: `markappoly hook`.
+pub const HOOK_COMMAND: &str = "hook";
+
+/// Largest hook payload read. Codex sends the whole patch, which can be big;
+/// anything past this is not a payload worth parsing.
+const HOOK_PAYLOAD_LIMIT: u64 = 32 * 1024 * 1024;
+
+/// Open the Markdown files an agent just wrote. The agent waits on this
+/// process, so it never prints, never fails, and returns as soon as the app
+/// has been started (or handed the files). Bad input and other file types are
+/// ignored.
+fn run_hook() {
+    // Run by hand from a terminal there's no payload, and reading would wait.
+    if !stdin_is_piped() {
+        return;
+    }
+    let mut input = String::new();
+    if io::stdin()
+        .lock()
+        .take(HOOK_PAYLOAD_LIMIT)
+        .read_to_string(&mut input)
+        .is_err()
+    {
+        return;
+    }
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let targets: Vec<String> = hook_paths(&input, &cwd)
+        .into_iter()
+        .filter(|p| is_markdown(p) && p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    if !targets.is_empty() {
+        let _ = spawn_app(&targets);
+    }
+}
+
+/// Files an agent's hook payload says were written, as absolute paths.
+///
+/// - Claude Code `PostToolUse` (Write/Edit/MultiEdit): `tool_input.file_path`.
+/// - Cursor `afterFileEdit`: top-level `file_path`.
+/// - Codex `PostToolUse` for `apply_patch`: `tool_input.command` holds the
+///   patch, whose `*** Add File:`, `*** Update File:` and `*** Move to:`
+///   headers name the files.
+///
+/// Relative paths resolve against the payload's `cwd` (Claude Code, Codex),
+/// then the first of Cursor's `workspace_roots`, then `fallback_cwd`.
+pub fn hook_paths(payload: &str, fallback_cwd: &Path) -> Vec<PathBuf> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return Vec::new();
+    };
+    let base = v
+        .get("cwd")
+        .and_then(|c| c.as_str())
+        .or_else(|| v.pointer("/workspace_roots/0").and_then(|c| c.as_str()))
+        .filter(|c| !c.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| fallback_cwd.to_path_buf());
+
+    let mut raw: Vec<&str> = Vec::new();
+    for key in ["/tool_input/file_path", "/file_path"] {
+        if let Some(p) = v.pointer(key).and_then(|p| p.as_str()) {
+            raw.push(p);
+        }
+    }
+    if v.get("tool_name").and_then(|t| t.as_str()) == Some("apply_patch") {
+        if let Some(patch) = v.pointer("/tool_input/command").and_then(|c| c.as_str()) {
+            raw.extend(patch_targets(patch));
+        }
+    }
+
+    let mut out: Vec<PathBuf> = Vec::new();
+    for p in raw.into_iter().map(str::trim).filter(|p| !p.is_empty()) {
+        let full = normalize(&base.join(p));
+        if !out.contains(&full) {
+            out.push(full);
+        }
+    }
+    out
+}
+
+/// Files a Codex `apply_patch` patch creates or changes. Deleted files and
+/// the old name of a moved file are left out.
+fn patch_targets(patch: &str) -> impl Iterator<Item = &str> {
+    patch.lines().filter_map(|line| {
+        let line = line.trim_end_matches('\r');
+        ["*** Add File: ", "*** Update File: ", "*** Move to: "]
+            .iter()
+            .find_map(|prefix| line.strip_prefix(prefix))
+    })
+}
+
+/// Markdown by extension: the app's list (`MD_EXTS`, kept in sync with
+/// `MD_EXTENSIONS` in src/paths.ts) minus `.txt`, because agents write plenty
+/// of text files (requirements.txt, logs) that nobody wants popping open.
+fn is_markdown(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|e| e != "txt" && crate::MD_EXTS.contains(&e.as_str()))
 }
 
 // ---------- Installing the command ----------
@@ -631,5 +746,64 @@ mod tests {
         std::thread::sleep(Duration::from_millis(5));
         prune_old_stdin_files(dir.path(), Duration::ZERO);
         assert!(!f.exists());
+    }
+
+    #[test]
+    fn hook_reads_claude_code_payloads() {
+        let payload = r#"{"session_id":"s","cwd":"/work/proj","hook_event_name":"PostToolUse",
+            "tool_name":"Write","tool_input":{"file_path":"/work/proj/PLAN.md","content":"x"}}"#;
+        assert_eq!(hook_paths(payload, Path::new("/elsewhere")), vec![PathBuf::from("/work/proj/PLAN.md")]);
+        let relative = r#"{"cwd":"/work/proj","tool_name":"Edit","tool_input":{"file_path":"docs/../notes.md"}}"#;
+        assert_eq!(hook_paths(relative, Path::new("/elsewhere")), vec![PathBuf::from("/work/proj/notes.md")]);
+    }
+
+    #[test]
+    fn hook_reads_cursor_payloads() {
+        let payload = r#"{"hook_event_name":"afterFileEdit","workspace_roots":["/work/proj"],
+            "file_path":"/work/proj/README.md","edits":[{"old_string":"a","new_string":"b"}]}"#;
+        assert_eq!(hook_paths(payload, Path::new("/elsewhere")), vec![PathBuf::from("/work/proj/README.md")]);
+        let relative = r#"{"workspace_roots":["/work/proj"],"file_path":"a.md"}"#;
+        assert_eq!(hook_paths(relative, Path::new("/elsewhere")), vec![PathBuf::from("/work/proj/a.md")]);
+    }
+
+    #[test]
+    fn hook_reads_codex_apply_patch_payloads() {
+        let patch = "*** Begin Patch\n*** Add File: docs/new.md\n+# New\n*** Update File: src/main.rs\n@@\n-a\n+b\n*** Update File: old.md\n*** Move to: renamed.md\n*** Delete File: gone.md\n*** End Patch";
+        let payload = serde_json::json!({
+            "cwd": "/work/proj",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "apply_patch",
+            "tool_input": { "command": patch },
+        })
+        .to_string();
+        assert_eq!(
+            hook_paths(&payload, Path::new("/elsewhere")),
+            ["docs/new.md", "src/main.rs", "old.md", "renamed.md"]
+                .iter()
+                .map(|p| PathBuf::from("/work/proj").join(p))
+                .collect::<Vec<_>>()
+        );
+        // Bash also uses `tool_input.command`, but it isn't a patch.
+        let bash = r#"{"cwd":"/w","tool_name":"Bash","tool_input":{"command":"*** Add File: x.md"}}"#;
+        assert!(hook_paths(bash, Path::new("/w")).is_empty());
+    }
+
+    #[test]
+    fn hook_ignores_malformed_payloads() {
+        for bad in ["", "not json", "[]", "42", r#"{"tool_input":{"file_path":7}}"#, r#"{"file_path":"  "}"#] {
+            assert!(hook_paths(bad, Path::new("/w")).is_empty(), "{bad}");
+        }
+        let no_cwd = r#"{"tool_input":{"file_path":"a.md"}}"#;
+        assert_eq!(hook_paths(no_cwd, Path::new("/w")), vec![PathBuf::from("/w/a.md")]);
+    }
+
+    #[test]
+    fn hook_opens_markdown_only() {
+        for p in ["a.md", "b.MARKDOWN", "c/d.mdown", "e.mkd", "f.mkdn"] {
+            assert!(is_markdown(Path::new(p)), "{p}");
+        }
+        for p in ["a.txt", "b.rs", "c", "d.md.bak", "requirements.txt"] {
+            assert!(!is_markdown(Path::new(p)), "{p}");
+        }
     }
 }
