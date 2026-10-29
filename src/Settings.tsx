@@ -1,4 +1,14 @@
-import { createContext, useContext, useId, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "./Modal";
 import type { usePreferences } from "./prefs";
 
@@ -32,9 +42,11 @@ function Row({
 function Toggle({
   checked,
   onChange,
+  disabled,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -43,6 +55,7 @@ function Toggle({
       aria-labelledby={useContext(RowLabel)}
       role="switch"
       aria-checked={checked}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
     >
       <span className="switch-knob" />
@@ -100,6 +113,86 @@ function Choice<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+type AgentStatus = {
+  id: string;
+  name: string;
+  installed: boolean;
+  enabled: boolean;
+  error: string | null;
+};
+
+/** Hooks in Claude Code, Codex and Cursor that open the Markdown they write. */
+function AgentsSection() {
+  const [agents, setAgents] = useState<AgentStatus[]>([]);
+  // One config write at a time; a second click mid-write is ignored.
+  const busy = useRef(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const refresh = useCallback(
+    () =>
+      invoke<AgentStatus[]>("agent_integrations_status")
+        .then(setAgents)
+        .catch(() => {}),
+    [],
+  );
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const toggle = async (id: string, enabled: boolean) => {
+    busy.current = true;
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    try {
+      await invoke("set_agent_integration", { id, enabled });
+    } catch (e) {
+      setErrors((prev) => ({ ...prev, [id]: String(e) }));
+    }
+    await refresh();
+    busy.current = false;
+  };
+
+  if (agents.length === 0) return null;
+  return (
+    <section className="set-section">
+      <h3>Agents</h3>
+      <p className="set-note">
+        When an agent writes a Markdown file, it opens here, with changes
+        highlighted.
+      </p>
+      {agents.map((a) => {
+        const error = errors[a.id] ?? a.error;
+        return (
+          <div key={a.id}>
+            <Row
+              label={a.name}
+              hint={
+                !a.installed
+                  ? "Not installed"
+                  : a.id === "codex" && a.enabled
+                    ? "Approve the hook once with /hooks in Codex"
+                    : undefined
+              }
+            >
+              <Toggle
+                checked={a.enabled}
+                disabled={!a.installed}
+                onChange={(v) => {
+                  if (!busy.current) void toggle(a.id, v);
+                }}
+              />
+            </Row>
+            {error && <p className="set-error">{error}</p>}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
@@ -242,6 +335,8 @@ export function Settings({
             />
           </Row>
         </section>
+
+        <AgentsSection />
 
         <details className="set-section advanced-settings">
           <summary>Advanced styling</summary>

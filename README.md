@@ -48,6 +48,15 @@ Markappoly remembers the version of each file you last read. When a file changes
 - **Copy feedback** turns your comments into Markdown, with each section name and quoted passage, ready to paste back to the author or an agent
 - Turn it off in Settings (**Highlight outside changes**) if you'd rather not track changes
 
+**Agents**
+
+Turn on Claude Code, Codex, or Cursor in Settings (**Agents**) and Markappoly adds a hook to that agent's own config:
+
+- When the agent writes or edits a Markdown file, the file opens here as a tab, or comes to the front if it's already open, with the changes highlighted
+- Other file types are ignored, and the hook never holds up or fails the agent
+- Only Markappoly's entry is added or removed; the rest of the config is kept, and the original file is backed up first (`settings.json.markappoly.bak`, `hooks.json.markappoly.bak`)
+- Codex asks you to approve new hooks once: run `/hooks` in Codex after turning it on
+
 **Reading**
 - Formatted preview by default, with GitHub-flavored Markdown: tables, task lists, strikethrough
 - Syntax-highlighted code, **KaTeX math**, **Mermaid diagrams**, and GitHub-style alerts (`> [!NOTE]`)

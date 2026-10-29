@@ -10,6 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::menu::{AboutMetadata, Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+mod agents;
 mod cli;
 
 // ---------- Live file watching (replaces mtime polling) ----------
@@ -315,6 +316,18 @@ fn install_cli(app: AppHandle) {
             .kind(kind)
             .show(|_| {});
     });
+}
+
+/// Settings ▸ Agents: which coding agents are installed and have our hook.
+#[tauri::command]
+fn agent_integrations_status() -> Vec<agents::AgentStatus> {
+    agents::status()
+}
+
+/// Add or remove our hook in one agent's config (`claude`, `codex`, `cursor`).
+#[tauri::command]
+fn set_agent_integration(id: String, enabled: bool) -> Result<(), String> {
+    agents::set(&id, enabled)
 }
 
 fn focus_main_window(app: &AppHandle) {
@@ -1341,7 +1354,9 @@ pub fn run() {
             seen_get,
             seen_set,
             open_with_default_app,
-            set_watched_folder
+            set_watched_folder,
+            agent_integrations_status,
+            set_agent_integration
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
