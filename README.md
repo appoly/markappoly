@@ -51,7 +51,9 @@ Markappoly remembers the version of each file you last read. When a file changes
 **Reading**
 - Formatted preview by default, with GitHub-flavored Markdown: tables, task lists, strikethrough
 - Syntax-highlighted code, **KaTeX math**, **Mermaid diagrams**, and GitHub-style alerts (`> [!NOTE]`)
-- Outline sidebar (with scroll spy) and folder tree browser, find-in-document (⌘F), and search — or search **and replace** — across a whole folder
+- Outline sidebar (with scroll spy) and folder tree browser, find-in-document (⌘F), and search — or search **and replace** — across a whole folder. Search lists matching file names first, then every matching line
+- Drag files and folders in the tree to move them on disk (open tabs follow), and sort the tree by name or by last edit, remembered per folder
+- Drag tabs to reorder them; ⌘⇧T reopens the last closed tab
 - Open Recent, word count and reading time, live reload when the file changes on disk
 - Session restore: tabs, folder, and each document’s view mode come back when you relaunch
 - Cursor, undo history, and reading position stay with each tab while you work
@@ -74,7 +76,7 @@ Point Markappoly at a folder of notes (an Obsidian vault works as-is) and it beh
 - `![[Note]]` embeds a whole note into the preview; `![[Note#Section]]` embeds just that section
 - `#tags` render as clickable chips, in the text and in frontmatter. Click one to search the folder for it
 - Hover any internal link and a small rendered preview of the target pops up
-- **Quick switcher** (⌘P): fuzzy-find any file, type `>` for commands, `#` for tags, or `@` for headings in the current document
+- **Quick switcher** (⌘P): fuzzy-find any file, type `>` for commands (or press ⌘K), `#` for tags, or `@` for headings in the current document
 - **Graph** (⌘⇧G): the current note's neighbourhood, or flip to **Vault** for a force-directed map of every note
 - **Templates**: keep skeleton notes in a `Templates` folder and create new notes from them (⌘N) with `{{title}}`, `{{date}}` and `{{time}}` filled in
 - **Daily notes** (⌘⇧D): jump to today's note, created on first use — name a template `Daily` to seed it
@@ -92,11 +94,11 @@ Point Markappoly at a folder of notes (an Obsidian vault works as-is) and it beh
 
 Save status and failures are visible, closing offers **Save / Don’t Save / Cancel**, and reloading asks before discarding edits. If a file changes externally, saving asks before replacing the disk version; **Save a copy** offers another way to keep your work.
 
-Everything’s tunable from **Settings** (⌘,), with reading preferences first. Occasional actions such as Graph, Present, File History, Reload, and zoom live in the **More** menu.
+Everything’s tunable from **Settings** (⌘,), and ⌘/ lists every shortcut, with reading preferences first. Occasional actions such as Graph, Present, File History, Reload, and zoom live in the **More** menu.
 
 **Export:** Text, HTML, JSON (AST), **Word (.docx)**, and PDF, plus **Copy as HTML** for pasting rich text elsewhere. Exports match the preview: HTML is a single self-contained file (images inlined, diagrams as SVG, math that renders offline), Word keeps callouts, highlights, images, diagrams and equations, and PDF waits for diagrams and fonts before printing. With [Pandoc](https://pandoc.org) installed, also RTF, EPUB, LaTeX, and Pandoc-rendered Word and PDF.
 
-**Native polish:** frosted vibrancy on macOS and acrylic on Windows, system/light/dark themes, a native menu bar, drag-and-drop, "open with" file association, and a window that reopens where you left it. On macOS, a **Quick Look** extension renders Markdown when you press Space on a `.md` file in Finder.
+**Native polish:** frosted vibrancy on macOS and acrylic on Windows, system/light/dark themes (⌘⇧L flips between light and dark), a native menu bar, drag-and-drop, "open with" file association, and a window that reopens where you left it. On macOS, a **Quick Look** extension renders Markdown when you press Space on a `.md` file in Finder.
 
 For a walkthrough of every feature, see the **[user manual](https://github.com/appoly/markappoly/wiki)**.
 
@@ -114,6 +116,8 @@ For a walkthrough of every feature, see the **[user manual](https://github.com/a
 | Bold / Italic / Link | ⌘B / ⌘I / ⌘K | Zoom | ⌘+ / ⌘- / ⌘0 |
 | Settings | ⌘, | New tab / Close | ⌘T / ⌘W |
 | Back / Forward | ⌘[ / ⌘] | Next / previous change | F7 / ⇧F7 |
+| Reopen closed tab | ⌘⇧T | Commands | ⌘K (outside the editor) |
+| Light / Dark | ⌘⇧L | All shortcuts | ⌘/ |
 
 ## Command line
 

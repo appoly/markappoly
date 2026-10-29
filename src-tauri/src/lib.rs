@@ -233,6 +233,8 @@ fn file_mtime(path: String) -> Result<u64, String> {
 struct FileEntry {
     name: String,
     path: String,
+    /// Last modified, in ms since the epoch (0 when unknown), for sorting.
+    mtime: u64,
 }
 
 const MD_EXTS: [&str; 6] = ["md", "markdown", "mdown", "mkd", "mkdn", "txt"];
@@ -252,9 +254,16 @@ fn collect_markdown(dir: &Path, base: &Path, out: &mut Vec<FileEntry>) {
         } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             if MD_EXTS.contains(&ext.to_lowercase().as_str()) {
                 let rel = path.strip_prefix(base).unwrap_or(&path);
+                let mtime = entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_millis() as u64);
                 out.push(FileEntry {
                     name: rel.to_string_lossy().to_string(),
                     path: path.to_string_lossy().to_string(),
+                    mtime,
                 });
             }
         }
@@ -272,6 +281,30 @@ fn list_markdown_dir(path: String) -> Result<Vec<FileEntry>, String> {
     collect_markdown(&base, &base, &mut out);
     out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(out)
+}
+
+/// Move a file or folder into another folder (sidebar drag and drop). Refuses
+/// to overwrite, and to move a folder into itself. Returns the new path.
+#[tauri::command]
+fn move_path(from: String, to_dir: String) -> Result<String, String> {
+    let src = PathBuf::from(&from);
+    let dest_dir = PathBuf::from(&to_dir);
+    let name = src.file_name().ok_or("nothing to move")?;
+    if !dest_dir.is_dir() {
+        return Err("the destination isn't a folder".into());
+    }
+    if dest_dir.starts_with(&src) {
+        return Err("a folder can't move into itself".into());
+    }
+    let dest = dest_dir.join(name);
+    if dest == src {
+        return Ok(from);
+    }
+    if dest.exists() {
+        return Err(format!("{} already exists there", name.to_string_lossy()));
+    }
+    fs::rename(&src, &dest).map_err(|e| e.to_string())?;
+    Ok(dest.to_string_lossy().to_string())
 }
 
 /// Files and folders to open that arrived from outside the app: launch
@@ -1147,6 +1180,11 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>, recents: &[String]) -> tauri::
                 .build(app)?,
         )
         .item(&recent_menu)
+        .item(
+            &MenuItemBuilder::with_id("reopen_tab", "Reopen Closed Tab")
+                .accelerator("CmdOrCtrl+Shift+T")
+                .build(app)?,
+        )
         .separator()
         .item(
             &MenuItemBuilder::with_id("new_note", "New Note…")
@@ -1216,6 +1254,11 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>, recents: &[String]) -> tauri::
                 .build(app)?,
         )
         .item(&MenuItemBuilder::with_id("toggle_sidebar", "Toggle Sidebar").build(app)?)
+        .item(
+            &MenuItemBuilder::with_id("toggle_theme", "Toggle Light / Dark")
+                .accelerator("CmdOrCtrl+Shift+L")
+                .build(app)?,
+        )
         .separator()
         .item(
             &MenuItemBuilder::with_id("present", "Start Presentation")
@@ -1226,6 +1269,12 @@ fn build_app_menu<R: Runtime>(app: &AppHandle<R>, recents: &[String]) -> tauri::
         .item(&MenuItemBuilder::with_id("zoom_in", "Zoom In").build(app)?)
         .item(&MenuItemBuilder::with_id("zoom_out", "Zoom Out").build(app)?)
         .item(&MenuItemBuilder::with_id("zoom_reset", "Actual Size").build(app)?)
+        .separator()
+        .item(
+            &MenuItemBuilder::with_id("shortcuts", "Keyboard Shortcuts")
+                .accelerator("CmdOrCtrl+/")
+                .build(app)?,
+        )
         .build()?;
 
     MenuBuilder::new(app)
@@ -1322,6 +1371,7 @@ pub fn run() {
             read_file_base64,
             file_mtime,
             list_markdown_dir,
+            move_path,
             index_dir,
             take_pending_open,
             search_dir,

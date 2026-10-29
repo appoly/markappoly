@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFolderTree } from "./folderTree";
+import { buildFolderTree, movedPath } from "./folderTree";
 
 describe("buildFolderTree", () => {
   it("builds a nested tree from relative paths", () => {
@@ -29,5 +29,32 @@ describe("buildFolderTree", () => {
 
   it("returns empty for empty input", () => {
     expect(buildFolderTree([])).toEqual([]);
+  });
+
+  it("gives folders their relative path", () => {
+    const tree = buildFolderTree([{ name: "a/b/c.md", path: "/p/a/b/c.md" }]);
+    expect(tree[0]).toMatchObject({ kind: "dir", rel: "a" });
+    if (tree[0].kind === "dir") expect(tree[0].children[0]).toMatchObject({ rel: "a/b" });
+  });
+
+  it("sorts by last edit, folders by their newest file", () => {
+    const tree = buildFolderTree(
+      [
+        { name: "old.md", path: "/p/old.md", mtime: 1 },
+        { name: "new.md", path: "/p/new.md", mtime: 9 },
+        { name: "a/x.md", path: "/p/a/x.md", mtime: 2 },
+        { name: "b/y.md", path: "/p/b/y.md", mtime: 5 },
+      ],
+      "modified",
+    );
+    expect(tree.map((n) => n.name)).toEqual(["b", "a", "new.md", "old.md"]);
+  });
+});
+
+describe("movedPath", () => {
+  it("follows a moved file and the contents of a moved folder", () => {
+    expect(movedPath("/p/a.md", "/p/a.md", "/p/x/a.md")).toBe("/p/x/a.md");
+    expect(movedPath("/p/d/n.md", "/p/d", "/p/x/d")).toBe("/p/x/d/n.md");
+    expect(movedPath("/p/dd/n.md", "/p/d", "/p/x/d")).toBeNull();
   });
 });

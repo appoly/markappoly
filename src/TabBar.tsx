@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 export function TabBar({
   tabs,
@@ -6,14 +6,31 @@ export function TabBar({
   onSelect,
   onClose,
   onNew,
+  onReorder,
 }: {
   tabs: { id: string; name: string; dirty: boolean }[];
   activeId: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void | Promise<void>;
   onNew: () => void;
+  /** Move a tab to a new index (drag to reorder). */
+  onReorder?: (id: string, toIndex: number) => void;
 }) {
   const list = useRef<HTMLDivElement>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const drag = useRef<{ id: string; x: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+
+  /** The index the dragged tab should take with the pointer at `x`. */
+  const indexAt = (x: number) => {
+    const els = list.current?.querySelectorAll<HTMLElement>(".tab") ?? [];
+    let i = 0;
+    for (const el of els) {
+      const r = el.getBoundingClientRect();
+      if (x > r.left + r.width / 2) i++;
+    }
+    return i;
+  };
   return (
     <div className="tab-strip">
       <div
@@ -48,8 +65,44 @@ export function TabBar({
         {tabs.map((t) => (
           <div
             key={t.id}
-            className={"tab" + (t.id === activeId ? " active" : "")}
+            className={
+              "tab" +
+              (t.id === activeId ? " active" : "") +
+              (t.id === dragId ? " dragging" : "")
+            }
             role="presentation"
+            onPointerDown={(e) => {
+              if (!onReorder || e.button !== 0) return;
+              if ((e.target as HTMLElement).closest(".tab-close")) return;
+              drag.current = { id: t.id, x: e.clientX, moved: false };
+            }}
+            onPointerMove={(e) => {
+              const d = drag.current;
+              if (!d || d.id !== t.id || !onReorder) return;
+              if (!d.moved) {
+                if (Math.abs(e.clientX - d.x) < 5) return;
+                d.moved = true;
+                e.currentTarget.setPointerCapture(e.pointerId);
+                setDragId(t.id);
+              }
+              const from = tabs.findIndex((x) => x.id === t.id);
+              let to = indexAt(e.clientX);
+              if (to > from) to--;
+              if (to !== from) onReorder(t.id, to);
+            }}
+            onPointerUp={(e) => {
+              if (drag.current?.moved) {
+                suppressClick.current = true;
+                setTimeout(() => (suppressClick.current = false), 0);
+                e.currentTarget.releasePointerCapture(e.pointerId);
+              }
+              drag.current = null;
+              setDragId(null);
+            }}
+            onPointerCancel={() => {
+              drag.current = null;
+              setDragId(null);
+            }}
           >
             <button
               className="tab-select"
@@ -58,7 +111,9 @@ export function TabBar({
               aria-controls="document-panel"
               aria-selected={t.id === activeId}
               tabIndex={t.id === activeId ? 0 : -1}
-              onClick={() => onSelect(t.id)}
+              onClick={() => {
+                if (!suppressClick.current) onSelect(t.id);
+              }}
               title={t.name}
               aria-label={`${t.name}${t.dirty ? ", unsaved changes" : ""}`}
             >

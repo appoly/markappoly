@@ -27,7 +27,9 @@ import {
 } from "./markdown";
 import { FindBar } from "./FindBar";
 import { Sidebar, type FileEntry } from "./Sidebar";
+import { movedPath } from "./folderTree";
 import { QuickSwitcher, type Command } from "./QuickSwitcher";
+import { ShortcutsSheet } from "./ShortcutsSheet";
 import { useVault } from "./vault";
 import { parseFrontmatter } from "./frontmatter";
 import { TabBar } from "./TabBar";
@@ -158,6 +160,9 @@ function App() {
   const [presenting, setPresenting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  /** What the switcher opens with: `>` lists commands (⌘K). */
+  const [switcherQuery, setSwitcherQuery] = useState("");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [newNoteOpen, setNewNoteOpen] = useState(false);
@@ -285,6 +290,20 @@ function App() {
     },
     [activateDoc],
   );
+
+  const reorderTab = useCallback((id: string, toIndex: number) => {
+    const current = docsRef.current;
+    const from = current.findIndex((d) => d.id === id);
+    if (from < 0 || from === toIndex) return;
+    const next = [...current];
+    const [doc] = next.splice(from, 1);
+    next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, doc);
+    docsRef.current = next;
+    setDocs(next);
+  }, []);
+
+  /** Recently closed files, newest last, for ⌘⇧T. */
+  const closedTabs = useRef<string[]>([]);
 
   const newDoc = useCallback(() => {
     const doc = makeDoc({ source: "" });
@@ -608,6 +627,39 @@ function App() {
     };
   }, [folderPath, refreshVault]);
 
+  /** Sidebar drag and drop: move on disk, then follow any open tabs. */
+  const movePath = useCallback(
+    async (from: string, toDir: string) => {
+      let to: string;
+      try {
+        to = await invoke<string>("move_path", { from, toDir });
+      } catch (e) {
+        setNotice(`Could not move ${basename(from)}. ${String(e)}`);
+        return;
+      }
+      let changed = false;
+      const next = docsRef.current.map((d) => {
+        const moved = d.path ? movedPath(d.path, from, to) : null;
+        if (!moved) return d;
+        changed = true;
+        return { ...d, path: moved };
+      });
+      if (changed) {
+        docsRef.current = next;
+        setDocs(next);
+      }
+      if (folderPath) {
+        try {
+          setFiles(await invoke<FileEntry[]>("list_markdown_dir", { path: folderPath }));
+        } catch {
+          /* the watcher will catch up */
+        }
+        refreshVault();
+      }
+    },
+    [folderPath, refreshVault],
+  );
+
   openRequestedRef.current = async (path) => {
     const isDir = await invoke<boolean>("path_is_dir", { path }).catch(() => false);
     if (isDir) await loadFolder(path);
@@ -746,6 +798,12 @@ function App() {
           (answer === "save" && !(await saveDocument(id)))
         )
           return;
+      }
+      if (doc.path) {
+        closedTabs.current = [
+          ...closedTabs.current.filter((p) => p !== doc.path),
+          doc.path,
+        ].slice(-20);
       }
       const current = docsRef.current;
       const index = current.findIndex((d) => d.id === id);
@@ -1494,7 +1552,23 @@ function App() {
           }
           break;
         case "quick_switcher":
+          setSwitcherQuery("");
           setSwitcherOpen((o) => !o);
+          break;
+        case "command_palette":
+          setSwitcherQuery(">");
+          setSwitcherOpen(true);
+          break;
+        case "reopen_tab": {
+          const path = closedTabs.current.pop();
+          if (path) openPath(path);
+          break;
+        }
+        case "toggle_theme":
+          prefs.setTheme(prefs.dark ? "light" : "dark");
+          break;
+        case "shortcuts":
+          setShortcutsOpen(true);
           break;
         case "local_graph":
           if (!getActive().path || !folderPath) {
@@ -1589,6 +1663,7 @@ function App() {
       prefs.zoomReset,
       prefs.toggleBookmark,
       prefs.setTheme,
+      prefs.dark,
       exportAs,
       getActive,
       newDoc,
@@ -1698,9 +1773,11 @@ function App() {
           }
           break;
         case "k":
-          if (mode === "edit" || mode === "split") {
-            e.preventDefault();
-            insertLink();
+          e.preventDefault();
+          if (mode === "edit" || mode === "split") insertLink();
+          else {
+            setSwitcherQuery(">");
+            setSwitcherOpen(true);
           }
           break;
       }
@@ -1886,6 +1963,7 @@ function App() {
 
   const commands: Command[] = [
     { id: "new_tab", label: "New tab", hint: "⌘T" },
+    { id: "reopen_tab", label: "Reopen closed tab", hint: "⌘⇧T" },
     { id: "nav_back", label: "Go back", hint: "⌘[" },
     { id: "nav_forward", label: "Go forward", hint: "⌘]" },
     ...(hunks.length
@@ -1925,6 +2003,8 @@ function App() {
     { id: "theme_system", label: "Theme: System" },
     { id: "theme_light", label: "Theme: Light" },
     { id: "theme_dark", label: "Theme: Dark" },
+    { id: "toggle_theme", label: "Toggle light / dark", hint: "⌘⇧L" },
+    { id: "shortcuts", label: "Keyboard shortcuts", hint: "⌘/" },
   ];
 
   const tabs = docs.map((d) => ({
@@ -2136,6 +2216,7 @@ function App() {
             backlinks={backlinks}
             onReplaceAll={replaceInFolder}
             searchNonce={searchNonce}
+            onMovePath={movePath}
           />
         )}
 
@@ -2146,6 +2227,7 @@ function App() {
             onSelect={selectTab}
             onClose={closeTab}
             onNew={newDoc}
+            onReorder={reorderTab}
           />
 
           {compare ? (
@@ -2534,9 +2616,12 @@ function App() {
             rememberHere();
             gotoHeading(h);
           }}
+          initialQuery={switcherQuery}
           onClose={() => setSwitcherOpen(false)}
         />
       )}
+
+      {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
 
       {graphOpen && filePath && (
         <Suspense fallback={null}>

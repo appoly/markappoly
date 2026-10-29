@@ -25,6 +25,7 @@ export function QuickSwitcher({
   onOpenTag,
   headings = [],
   onGotoHeading,
+  initialQuery = "",
   onClose,
 }: {
   files: FileEntry[];
@@ -36,9 +37,11 @@ export function QuickSwitcher({
   onOpenTag: (tag: string) => void;
   headings?: Heading[];
   onGotoHeading?: (h: Heading) => void;
+  /** Start in a mode, e.g. `>` for commands. */
+  initialQuery?: string;
   onClose: () => void;
 }) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);

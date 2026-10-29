@@ -1,22 +1,97 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Heading } from "./markdown";
-import { buildFolderTree, type TreeNode } from "./folderTree";
-import { basename } from "./paths";
+import { buildFolderTree, type TreeNode, type TreeSort } from "./folderTree";
+import { basename, dirOf } from "./paths";
 import type { Backlink } from "./vault";
 
-export type FileEntry = { name: string; path: string };
+export type FileEntry = { name: string; path: string; mtime?: number };
 type SearchHit = { path: string; name: string; line: number; text: string };
+
+/** How many file-name matches to list above the line matches. */
+const NAME_HIT_LIMIT = 8;
+
+function joinPath(dir: string, rel: string): string {
+  if (!rel) return dir;
+  const sep = dir.includes("\\") && !dir.includes("/") ? "\\" : "/";
+  return dir.replace(/[\\/]+$/, "") + sep + rel.split("/").join(sep);
+}
+
+/**
+ * Pointer-driven drag and drop for the folder tree. (HTML5 drag events are
+ * swallowed by the webview's own file-drop handling on some platforms.)
+ * Rows carry `data-drag-path`; drop targets carry `data-drop-dir`.
+ */
+function useTreeDrag(onMove?: (from: string, toDir: string) => void) {
+  const [drag, setDrag] = useState<{ path: string; x: number; y: number; over: string | null } | null>(null);
+  const suppressClick = useRef(false);
+  useEffect(() => {
+    if (!onMove) return;
+    let start: { path: string; x: number; y: number } | null = null;
+    let active = false;
+    const targetAt = (x: number, y: number) =>
+      (document.elementFromPoint(x, y)?.closest("[data-drop-dir]") as HTMLElement | null)
+        ?.dataset.dropDir ?? null;
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const row = (e.target as HTMLElement).closest<HTMLElement>("[data-drag-path]");
+      if (!row) return;
+      start = { path: row.dataset.dragPath!, x: e.clientX, y: e.clientY };
+      active = false;
+    };
+    const move = (e: PointerEvent) => {
+      if (!start) return;
+      if (!active && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 5) return;
+      active = true;
+      e.preventDefault();
+      setDrag({ path: start.path, x: e.clientX, y: e.clientY, over: targetAt(e.clientX, e.clientY) });
+    };
+    const up = (e: PointerEvent) => {
+      if (start && active) {
+        suppressClick.current = true;
+        setTimeout(() => (suppressClick.current = false), 0);
+        const dir = targetAt(e.clientX, e.clientY);
+        const from = start.path;
+        if (dir && dir !== dirOf(from) && dir !== from) onMove(from, dir);
+      }
+      start = null;
+      active = false;
+      setDrag(null);
+    };
+    const cancel = () => {
+      start = null;
+      active = false;
+      setDrag(null);
+    };
+    window.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("blur", cancel);
+    return () => {
+      window.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("blur", cancel);
+    };
+  }, [onMove]);
+  return { drag, suppressClick };
+}
+
+type TreeCtx = {
+  activePath: string | null;
+  onOpenFile: (path: string) => void;
+  root: string | null;
+  dropOver: string | null;
+  suppressClick: MutableRefObject<boolean>;
+};
 
 function FileTree({
   nodes,
-  activePath,
-  onOpenFile,
+  ctx,
   depth = 0,
 }: {
   nodes: TreeNode[];
-  activePath: string | null;
-  onOpenFile: (path: string) => void;
+  ctx: TreeCtx;
   depth?: number;
 }) {
   return (
@@ -26,19 +101,16 @@ function FileTree({
     >
       {nodes.map((n) =>
         n.kind === "dir" ? (
-          <FolderNode
-            key={`d:${n.name}:${depth}`}
-            node={n}
-            activePath={activePath}
-            onOpenFile={onOpenFile}
-            depth={depth}
-          />
+          <FolderNode key={`d:${n.rel}`} node={n} ctx={ctx} depth={depth} />
         ) : (
-          <li key={n.path}>
+          <li key={n.path} data-drop-dir={ctx.root ? dirOf(n.path) : undefined}>
             <button
-              className={"file-item" + (n.path === activePath ? " active" : "")}
+              className={"file-item" + (n.path === ctx.activePath ? " active" : "")}
               style={{ paddingLeft: 14 + depth * 12 }}
-              onClick={() => onOpenFile(n.path)}
+              data-drag-path={ctx.root ? n.path : undefined}
+              onClick={() => {
+                if (!ctx.suppressClick.current) ctx.onOpenFile(n.path);
+              }}
               title={n.path}
             >
               {n.name}
@@ -52,15 +124,14 @@ function FileTree({
 
 function FolderNode({
   node,
-  activePath,
-  onOpenFile,
+  ctx,
   depth,
 }: {
   node: Extract<TreeNode, { kind: "dir" }>;
-  activePath: string | null;
-  onOpenFile: (path: string) => void;
+  ctx: TreeCtx;
   depth: number;
 }) {
+  const { activePath } = ctx;
   // Auto-expand if the active file lives under this folder.
   const containsActive = useMemo(() => {
     if (!activePath) return false;
@@ -76,26 +147,24 @@ function FolderNode({
     if (containsActive) setOpen(true);
   }, [containsActive]);
 
+  const abs = ctx.root ? joinPath(ctx.root, node.rel) : null;
   return (
     <li className="tree-folder">
       <button
-        className="folder-item"
+        className={"folder-item" + (abs && ctx.dropOver === abs ? " drop-target" : "")}
         style={{ paddingLeft: 14 + depth * 12 }}
-        onClick={() => setOpen((o) => !o)}
+        data-drag-path={abs ?? undefined}
+        data-drop-dir={abs ?? undefined}
+        onClick={() => {
+          if (!ctx.suppressClick.current) setOpen((o) => !o);
+        }}
         title={node.name}
         aria-expanded={open}
       >
         <span className="folder-chevron">{open ? "▾" : "▸"}</span>
         {node.name}
       </button>
-      {open && (
-        <FileTree
-          nodes={node.children}
-          activePath={activePath}
-          onOpenFile={onOpenFile}
-          depth={depth + 1}
-        />
-      )}
+      {open && <FileTree nodes={node.children} ctx={ctx} depth={depth + 1} />}
     </li>
   );
 }
@@ -119,6 +188,7 @@ export function Sidebar({
   backlinks,
   onReplaceAll,
   searchNonce = 0,
+  onMovePath,
 }: {
   files: FileEntry[];
   folderName: string | null;
@@ -141,6 +211,8 @@ export function Sidebar({
   onReplaceAll?: (query: string, replacement: string) => void;
   /** Bumped after a folder-wide replace so the hit list refreshes. */
   searchNonce?: number;
+  /** Move a file or folder (dragged in the tree) into another folder. */
+  onMovePath?: (from: string, toDir: string) => void;
 }) {
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem("mv.sidebarWidth") || 248);
@@ -156,7 +228,38 @@ export function Sidebar({
   const [searching, setSearching] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [replacement, setReplacement] = useState("");
-  const tree = useMemo(() => buildFolderTree(files), [files]);
+  const [sort, setSort] = useState<TreeSort>("name");
+  const sortKey = folderPath ? `mv.treeSort:${folderPath}` : null;
+  useEffect(() => {
+    setSort(sortKey && localStorage.getItem(sortKey) === "modified" ? "modified" : "name");
+  }, [sortKey]);
+  const toggleSort = () => {
+    const next: TreeSort = sort === "name" ? "modified" : "name";
+    setSort(next);
+    if (sortKey) localStorage.setItem(sortKey, next);
+  };
+  const tree = useMemo(() => buildFolderTree(files, sort), [files, sort]);
+  const { drag, suppressClick } = useTreeDrag(folderPath ? onMovePath : undefined);
+  const treeCtx: TreeCtx = {
+    activePath,
+    onOpenFile,
+    root: folderPath,
+    dropOver: drag?.over ?? null,
+    suppressClick,
+  };
+  const nameHits = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return files
+      .filter((f) => f.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        // Matches in the file's own name beat matches in its folder path.
+        const an = basename(a.name).toLowerCase().includes(q) ? 0 : 1;
+        const bn = basename(b.name).toLowerCase().includes(q) ? 0 : 1;
+        return an - bn || a.name.length - b.name.length;
+      })
+      .slice(0, NAME_HIT_LIMIT);
+  }, [files, query]);
 
   useEffect(() => {
     if (!folderPath || query.trim() === "") {
@@ -223,11 +326,32 @@ export function Sidebar({
         )}
 
         <div className="sidebar-section files-section">
-          <div className="sidebar-title">
+          <div
+            className={
+              "sidebar-title" +
+              (folderPath && drag?.over === folderPath ? " drop-target" : "")
+            }
+            data-drop-dir={folderPath ?? undefined}
+          >
             <span>{folderName ?? "Files"}</span>
-            <button className="link-btn" onClick={onOpenFolder}>
-              Open Folder…
-            </button>
+            <span className="sidebar-title-actions">
+              {folderPath && files.length > 0 && (
+                <button
+                  className="link-btn"
+                  onClick={toggleSort}
+                  title={
+                    sort === "name"
+                      ? "Sorted by name. Click to sort by last edit"
+                      : "Sorted by last edit. Click to sort by name"
+                  }
+                >
+                  {sort === "name" ? "A–Z" : "Recent"}
+                </button>
+              )}
+              <button className="link-btn" onClick={onOpenFolder}>
+                Open Folder…
+              </button>
+            </span>
           </div>
 
           {folderPath && (
@@ -284,8 +408,28 @@ export function Sidebar({
             </div>
           )}
 
+          {searchActive && nameHits.length > 0 && (
+            <ul className="file-list name-hits" aria-label="Files">
+              {nameHits.map((f) => (
+                <li key={f.path}>
+                  <button
+                    className={"file-item" + (f.path === activePath ? " active" : "")}
+                    onClick={() => onOpenFile(f.path)}
+                    title={f.path}
+                  >
+                    {basename(f.name)}
+                    {f.name !== basename(f.name) && (
+                      <span className="name-hit-dir">{dirOf(f.name)}</span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
           {searchActive ? (
             hits.length === 0 ? (
+              nameHits.length > 0 && !searchError ? null : (
               <div className="sidebar-empty">
                 {searchError
                   ? "Could not search this folder. Try reopening it."
@@ -293,6 +437,7 @@ export function Sidebar({
                     ? "Searching…"
                     : "No matches. Try another search."}
               </div>
+              )
             ) : (
               <ul className="file-list">
                 {hits.map((h, i) => (
@@ -319,11 +464,7 @@ export function Sidebar({
                 : "Open a folder to browse your notes"}
             </div>
           ) : (
-            <FileTree
-              nodes={tree}
-              activePath={activePath}
-              onOpenFile={onOpenFile}
-            />
+            <FileTree nodes={tree} ctx={treeCtx} />
           )}
         </div>
 
@@ -402,6 +543,15 @@ export function Sidebar({
           </details>
         )}
       </div>
+      {drag && (
+        <div
+          className="tree-drag-ghost"
+          style={{ left: drag.x + 12, top: drag.y + 8 }}
+          aria-hidden="true"
+        >
+          {basename(drag.path)}
+        </div>
+      )}
       <div
         className="sidebar-resizer"
         role="separator"

@@ -950,6 +950,9 @@ body {
   background: var(--code-bg);
   color: var(--text);
 }
+.tab.dragging {
+  opacity: 0.55;
+}
 .tab-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2118,6 +2121,46 @@ details.markdown-alert[open] > summary.markdown-alert-title::before {
 .sidebar-title .link-btn {
   flex-shrink: 0;
 }
+.sidebar-title-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.sidebar-title.drop-target,
+.folder-item.drop-target {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 6px;
+}
+[data-drag-path] {
+  touch-action: none;
+}
+.tree-drag-ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18), 0 0 0 0.5px var(--hairline);
+  white-space: nowrap;
+}
+.name-hits {
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--hairline);
+}
+.name-hit-dir {
+  margin-left: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
 .sidebar-resizer {
   position: absolute;
   inset-block: 0;
@@ -2590,4 +2633,46 @@ button.primary-action {
   padding-right: 24px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* ⌘/ keyboard shortcuts sheet */
+.shortcuts-sheet {
+  width: min(680px, calc(100vw - 48px));
+}
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 4px 28px;
+}
+.shortcuts-group h3 {
+  margin: 12px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.shortcuts-group dl {
+  margin: 0;
+}
+.shortcut-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.shortcut-row dd {
+  margin: 0;
+}
+.shortcut-row kbd {
+  font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--code-bg);
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+  white-space: nowrap;
 }
