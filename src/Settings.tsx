@@ -184,6 +184,15 @@ export function Settings({
 
         <section className="set-section">
           <h3>Editor</h3>
+          <Row
+            label="Live formatting"
+            hint="Style Markdown as you type in Edit view"
+          >
+            <Toggle
+              checked={prefs.livePreview}
+              onChange={prefs.setLivePreview}
+            />
+          </Row>
           <Row label="Focus mode" hint="Dim all but the current paragraph">
             <Toggle checked={prefs.focusMode} onChange={prefs.setFocusMode} />
           </Row>

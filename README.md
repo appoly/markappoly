@@ -84,6 +84,8 @@ Point Markappoly at a folder of notes (an Obsidian vault works as-is) and it beh
 
 **Editing**
 - Toggle to a CodeMirror source editor with grouped Heading and Insert menus and contextual table tools, or a **split view** (⌘⇧E) with editor and preview side by side, scrolling together
+- **Live formatting** in Edit view: headings, emphasis, links, task boxes, tables and math look right while you type, and the file stays plain Markdown. Markup reappears on the line you're editing. Turn it off in Settings for raw source
+- **Slash menu**: type `/` on an empty line to insert any block (headings, lists, tasks, quote, code, table, math, Mermaid, callout, divider, image, link), filtering as you type
 - **Focus mode** and **typewriter scrolling** for distraction-free writing, with editor spellcheck
 - Table tools to insert, extend, and align Markdown tables
 - Paste or drag an image to attach it next to the document; paste rich text and it converts to Markdown
