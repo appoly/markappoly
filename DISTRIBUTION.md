@@ -97,12 +97,14 @@ The updater endpoint is set to `https://github.com/appoly/markappoly/releases/la
 **Cut a release:**
 
 ```bash
-# bump "version" in src-tauri/tauri.conf.json (e.g. 0.2.0), commit, then:
+# bump "version" in package.json, src-tauri/tauri.conf.json and
+# src-tauri/Cargo.toml (e.g. 0.2.0), refresh the lockfiles, commit and push, then:
+cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 >/dev/null
 git tag v0.2.0
 git push origin v0.2.0
 ```
 
-The workflow builds every platform, creates a **draft** GitHub Release with the installers attached, and (when the signing key secret is set) attaches the updater `latest.json`. Review the draft and publish it.
+The workflow builds every platform, creates a **draft** GitHub Release with the installers attached, and (when the signing key secret is set) attaches the updater `latest.json`. Review the draft and publish it (`gh release edit v0.2.0 --draft=false --latest`); until then the updater keeps serving the previous version.
 
 You can also dispatch the workflow by tag (Actions → Release → Run workflow) and optionally paste release notes. The daily security job uses that path when it remediates an advisory.
 

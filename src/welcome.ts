@@ -83,11 +83,16 @@ Open a folder (**⌘⇧O**) and Markappoly treats it like a vault. If your notes
 
 ### Do more
 
-- Open several files as **tabs**, then **Compare** two of them side by side
-- Browse a whole folder from the sidebar (**⌘⇧O**) and search across all of it
+- When a file changes on disk (an agent's rewrite, a \`git pull\`), the changes since you last read it are **highlighted**, with a review bar to step through them
+- Turn on **Agents** in Settings and the Markdown that Claude Code, Codex or Cursor writes opens here as it's written
+- The editor formats as you type; type \`/\` on an empty line to insert any block
+- CSV, TSV, JSON and JSONL files open as tables and fields you can edit
+- Open several files as **tabs** (drag to reorder, **⌘⇧T** to reopen), then **Compare** two of them side by side
+- Browse a whole folder from the sidebar (**⌘⇧O**), search across all of it, and drag files to move them
 - Paste or drag an image into the editor to attach it
 - Edit frontmatter as **properties** straight from the preview
 - Export to Word and PDF, or to more formats when Pandoc is installed
+- **⌘/** lists every shortcut
 
 New here? The full guide lives in the [user manual](https://github.com/appoly/markappoly/wiki).
 

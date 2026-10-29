@@ -44,6 +44,8 @@ export type EditorFeatures = {
   pasteAsMarkdown: boolean;
   /** Draw formatting over the source (Edit view only; Split has a preview). */
   livePreview: boolean;
+  /** A Markdown document, not code or data: enables `[[`, `#` and `/` completion. */
+  markdown: boolean;
 };
 
 export type EditorProps = {
@@ -149,9 +151,9 @@ export function EditorPane({
       ...EDITOR_BASE,
       reviewMarks,
       imageExt,
-      wikiExt,
       sessionExt,
     ];
+    if (features.markdown) ext.push(wikiExt);
     if (features.pasteAsMarkdown) ext.push(pasteMarkdown);
     if (features.spellcheck) ext.push(spellcheck);
     if (features.focusMode) ext.push(focusMode);
@@ -167,6 +169,7 @@ export function EditorPane({
     features.focusMode,
     features.typewriter,
     features.livePreview,
+    features.markdown,
   ]);
 
   return (

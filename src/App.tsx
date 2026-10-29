@@ -1065,13 +1065,16 @@ function App() {
   const getTags = useCallback(() => tagsRef.current, []);
 
   // Assembled into CodeMirror extensions inside the lazily loaded EditorPane.
+  // Live formatting is for Markdown; code and data files edit as plain text.
+  const isMarkdownDoc = !filePath || fileKind(filePath) === "markdown";
   const editorFeatures = useMemo(
     () => ({
       focusMode: prefs.focusMode,
       typewriter: prefs.typewriter,
       spellcheck: prefs.spellcheck,
       pasteAsMarkdown: prefs.pasteAsMarkdown,
-      livePreview: prefs.livePreview,
+      livePreview: prefs.livePreview && isMarkdownDoc,
+      markdown: isMarkdownDoc,
     }),
     [
       prefs.focusMode,
@@ -1079,6 +1082,7 @@ function App() {
       prefs.spellcheck,
       prefs.pasteAsMarkdown,
       prefs.livePreview,
+      isMarkdownDoc,
     ],
   );
 
