@@ -25,9 +25,9 @@ export function isInTable(doc: Text, pos: number): boolean {
 }
 
 const SEP_RE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
-const isSep = (line: string) => SEP_RE.test(line) && line.includes("-");
+export const isSep = (line: string) => SEP_RE.test(line) && line.includes("-");
 
-function splitCells(line: string): string[] {
+export function splitCells(line: string): string[] {
   let s = line.trim();
   if (s.startsWith("|")) s = s.slice(1);
   if (s.endsWith("|")) s = s.slice(0, -1);
@@ -91,7 +91,8 @@ function editTable(
   return true;
 }
 
-const TEMPLATE =
+/** A 3-column table skeleton (also inserted by the editor's slash menu). */
+export const TABLE_TEMPLATE =
   "| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|          |          |          |";
 
 /** Insert a 3-column table skeleton on its own lines, cursor in the first cell. */
@@ -100,12 +101,12 @@ export function insertTable(view: EditorView) {
   const line = view.state.doc.lineAt(from);
   if (line.text.trim() === "") {
     view.dispatch({
-      changes: { from: line.from, to: line.to, insert: TEMPLATE },
+      changes: { from: line.from, to: line.to, insert: TABLE_TEMPLATE },
       selection: { anchor: line.from + 2 },
     });
   } else {
     view.dispatch({
-      changes: { from: line.to, insert: "\n\n" + TEMPLATE },
+      changes: { from: line.to, insert: "\n\n" + TABLE_TEMPLATE },
       selection: { anchor: line.to + 4 },
     });
   }

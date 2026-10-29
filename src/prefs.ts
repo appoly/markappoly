@@ -13,6 +13,7 @@ const FOCUS_KEY = "mv.focusMode";
 const TYPEWRITER_KEY = "mv.typewriter";
 const SPELLCHECK_KEY = "mv.spellcheck";
 const PASTE_MD_KEY = "mv.pasteAsMarkdown";
+const LIVE_PREVIEW_KEY = "mv.livePreview";
 const READING_WIDTH_KEY = "mv.readingWidth";
 const READING_FONT_KEY = "mv.readingFont";
 const LINE_SPACING_KEY = "mv.lineSpacing";
@@ -60,6 +61,7 @@ export function usePreferences() {
   const [typewriter, setTypewriter] = useState<boolean>(() => load(TYPEWRITER_KEY, false));
   const [spellcheck, setSpellcheck] = useState<boolean>(() => load(SPELLCHECK_KEY, true));
   const [pasteAsMarkdown, setPasteAsMarkdown] = useState<boolean>(() => load(PASTE_MD_KEY, true));
+  const [livePreview, setLivePreview] = useState<boolean>(() => load(LIVE_PREVIEW_KEY, true));
   const [readingWidth, setReadingWidth] = useState<ReadingWidth>(() =>
     load(READING_WIDTH_KEY, "normal"),
   );
@@ -140,6 +142,9 @@ export function usePreferences() {
     localStorage.setItem(PASTE_MD_KEY, JSON.stringify(pasteAsMarkdown));
   }, [pasteAsMarkdown]);
   useEffect(() => {
+    localStorage.setItem(LIVE_PREVIEW_KEY, JSON.stringify(livePreview));
+  }, [livePreview]);
+  useEffect(() => {
     localStorage.setItem(BLOCK_REMOTE_IMG_KEY, JSON.stringify(blockRemoteImages));
   }, [blockRemoteImages]);
   useEffect(() => {
@@ -199,6 +204,8 @@ export function usePreferences() {
     setSpellcheck,
     pasteAsMarkdown,
     setPasteAsMarkdown,
+    livePreview,
+    setLivePreview,
     readingWidth,
     setReadingWidth,
     readingFont,

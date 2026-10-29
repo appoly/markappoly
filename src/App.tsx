@@ -1071,12 +1071,14 @@ function App() {
       typewriter: prefs.typewriter,
       spellcheck: prefs.spellcheck,
       pasteAsMarkdown: prefs.pasteAsMarkdown,
+      livePreview: prefs.livePreview,
     }),
     [
       prefs.focusMode,
       prefs.typewriter,
       prefs.spellcheck,
       prefs.pasteAsMarkdown,
+      prefs.livePreview,
     ],
   );
 

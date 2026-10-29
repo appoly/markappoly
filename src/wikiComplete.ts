@@ -3,6 +3,7 @@ import {
   type Completion,
   type CompletionContext,
   type CompletionResult,
+  type CompletionSource,
 } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { FileEntry } from "./Sidebar";
@@ -10,10 +11,13 @@ import type { FileEntry } from "./Sidebar";
 /**
  * Autocomplete for Obsidian-style syntax in the editor:
  * `[[` suggests notes from the open folder, `#` suggests known tags.
+ * CodeMirror accepts a single `override` list, so other editor completion
+ * sources (the slash menu) are passed in and share it.
  */
 export function wikiCompletion(
   getFiles: () => FileEntry[],
   getTags: () => string[],
+  extraSources: CompletionSource[] = [],
 ): Extension {
   const source = (ctx: CompletionContext): CompletionResult | null => {
     const line = ctx.state.doc.lineAt(ctx.pos);
@@ -72,5 +76,5 @@ export function wikiCompletion(
     return null;
   };
 
-  return autocompletion({ override: [source], icons: false });
+  return autocompletion({ override: [source, ...extraSources], icons: false });
 }

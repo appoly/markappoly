@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useCallback } from "react";
 import CodeMirror, { ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { search } from "@codemirror/search";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
@@ -12,12 +12,18 @@ import {
   pasteMarkdown,
 } from "./editorFeatures";
 import { wikiCompletion } from "./wikiComplete";
+import { slashSource } from "./slashMenu";
+import { livePreview, markdownExtras } from "./livePreview";
 import { Preview } from "./markdown";
 import { useDebouncedValue } from "./useDebouncedValue";
 import { restoreEditor, type EditorSession } from "./editorSession";
 import { isInTable } from "./tableTools";
 import { reviewMarks, showReviewMarks, type LineMark } from "./editorReview";
 import type { FileEntry } from "./Sidebar";
+
+// GFM (tables, task lists, strikethrough) plus math and frontmatter, so the
+// syntax tree matches what the preview renders.
+const MARKDOWN = markdown({ base: markdownLanguage, extensions: [markdownExtras] });
 
 const EDITOR_BASE: Extension[] = [
   editorTheme,
@@ -36,6 +42,8 @@ export type EditorFeatures = {
   typewriter: boolean;
   spellcheck: boolean;
   pasteAsMarkdown: boolean;
+  /** Draw formatting over the source (Edit view only; Split has a preview). */
+  livePreview: boolean;
 };
 
 export type EditorProps = {
@@ -130,13 +138,13 @@ export function EditorPane({
   );
 
   const wikiExt = useMemo(
-    () => wikiCompletion(getFiles, getTags),
+    () => wikiCompletion(getFiles, getTags, [slashSource]),
     [getFiles, getTags],
   );
 
   const extensions = useMemo(() => {
     const ext: Extension[] = [
-      markdown(),
+      MARKDOWN,
       search(),
       ...EDITOR_BASE,
       reviewMarks,
@@ -148,6 +156,7 @@ export function EditorPane({
     if (features.spellcheck) ext.push(spellcheck);
     if (features.focusMode) ext.push(focusMode);
     if (features.typewriter) ext.push(typewriter);
+    if (features.livePreview) ext.push(livePreview);
     return ext;
   }, [
     imageExt,
@@ -157,6 +166,7 @@ export function EditorPane({
     features.spellcheck,
     features.focusMode,
     features.typewriter,
+    features.livePreview,
   ]);
 
   return (
@@ -175,6 +185,10 @@ export function EditorPane({
       height="100%"
       theme="none"
       basicSetup={{
+        // Live formatting reads as a document; line numbers would follow
+        // the source lines, not what you see.
+        lineNumbers: !features.livePreview,
+        highlightActiveLineGutter: !features.livePreview,
         foldGutter: false,
         syntaxHighlighting: false,
         autocompletion: false,
@@ -227,6 +241,12 @@ export function SplitView({
   // The preview re-renders only edited blocks; a short debounce still batches
   // bursts of keystrokes into one update.
   const previewSource = useDebouncedValue(editor.value, 50);
+  // The preview beside the source already shows the formatting, so the split
+  // editor stays raw Markdown (and its line numbers keep their meaning).
+  const features = useMemo(
+    () => ({ ...editor.features, livePreview: false }),
+    [editor.features],
+  );
 
   useEffect(() => {
     const scroller = editor.cmRef.current?.view?.scrollDOM;
@@ -255,7 +275,7 @@ export function SplitView({
   return (
     <div className="split">
       <div className="split-pane split-editor">
-        <EditorPane {...editor} />
+        <EditorPane {...editor} features={features} />
       </div>
       <div className="split-pane split-preview" ref={previewRef}>
         <div className="markdown-body" ref={onPreviewBody}>
