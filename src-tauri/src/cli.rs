@@ -324,6 +324,9 @@ fn attach_parent_console() {
 /// Subcommand run by coding agents' hooks: `markappoly hook`.
 pub const HOOK_COMMAND: &str = "hook";
 
+/// Passed by the hook to the running app: open without taking focus.
+pub const BACKGROUND_FLAG: &str = "--background";
+
 /// Largest hook payload read. Codex sends the whole patch, which can be big;
 /// anything past this is not a payload worth parsing.
 const HOOK_PAYLOAD_LIMIT: u64 = 32 * 1024 * 1024;
@@ -353,7 +356,9 @@ fn run_hook() {
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
     if !targets.is_empty() {
-        let _ = spawn_app(&targets);
+        let mut args = vec![BACKGROUND_FLAG.to_string()];
+        args.extend(targets);
+        let _ = spawn_app(&args);
     }
 }
 

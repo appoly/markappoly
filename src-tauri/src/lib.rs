@@ -315,7 +315,12 @@ fn move_path(from: String, to_dir: String) -> Result<String, String> {
 /// registered its listener, so they are buffered here and drained by the
 /// frontend on startup instead of being lost to the race.
 #[derive(Default)]
-struct PendingOpen(Mutex<Vec<String>>);
+struct PendingOpen {
+    paths: Mutex<Vec<String>>,
+    /// The frontend has drained the buffer and is listening, so later
+    /// requests only need the event.
+    listening: std::sync::atomic::AtomicBool,
+}
 
 /// Buffer paths for the startup drain AND emit them for a window that is
 /// already up. The frontend de-dupes, so either or both landing is fine.
@@ -323,11 +328,10 @@ fn request_open(app: &AppHandle, paths: Vec<String>) {
     if paths.is_empty() {
         return;
     }
-    app.state::<PendingOpen>()
-        .0
-        .lock()
-        .unwrap()
-        .extend(paths.iter().cloned());
+    let pending = app.state::<PendingOpen>();
+    if !pending.listening.load(std::sync::atomic::Ordering::SeqCst) {
+        pending.paths.lock().unwrap().extend(paths.iter().cloned());
+    }
     for p in paths {
         let _ = app.emit("open-file", p);
     }
@@ -373,7 +377,8 @@ fn focus_main_window(app: &AppHandle) {
 
 #[tauri::command]
 fn take_pending_open(state: tauri::State<PendingOpen>) -> Vec<String> {
-    let mut pending = state.0.lock().unwrap();
+    let mut pending = state.paths.lock().unwrap();
+    state.listening.store(true, std::sync::atomic::Ordering::SeqCst);
     std::mem::take(&mut *pending)
 }
 
@@ -1310,9 +1315,21 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            let targets = cli::launch_targets(args.get(1..).unwrap_or_default(), Path::new(&cwd));
+            let args = args.get(1..).unwrap_or_default();
+            let targets = cli::launch_targets(args, Path::new(&cwd));
             request_open(app, targets);
-            focus_main_window(app);
+            if args.iter().any(|a| a == cli::BACKGROUND_FLAG) {
+                // An agent's hook: open the page, but leave focus with the
+                // agent so every edit doesn't pull the window to the front.
+                if let Some(window) = app.get_webview_window("main") {
+                    if !window.is_visible().unwrap_or(true) || window.is_minimized().unwrap_or(false) {
+                        let _ = window.unminimize();
+                        let _ = window.show();
+                    }
+                }
+            } else {
+                focus_main_window(app);
+            }
         }));
     }
 
