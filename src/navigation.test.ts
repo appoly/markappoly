@@ -29,6 +29,10 @@ describe("fileKind", () => {
     expect(fileKind("/a/notes.txt")).toBe("markdown");
     expect(fileKind("/a/Makefile")).toBe("text");
     expect(fileKind("/a/spec.pdf")).toBe("external");
+    expect(fileKind("/a/people.csv")).toBe("data");
+    expect(fileKind("/a/b.TSV")).toBe("data");
+    expect(fileKind("/a/package.json")).toBe("data");
+    expect(fileKind("/a/log.jsonl")).toBe("data");
     expect(fileKind("/a/setup.sh")).toBe("text");
     expect(fileKind("/a/tool.exe")).toBe("blocked");
     expect(fileKind("/a/App.app")).toBe("blocked");

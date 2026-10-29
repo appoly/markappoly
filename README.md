@@ -71,6 +71,7 @@ Turn on Claude Code, Codex, or Cursor in Settings (**Agents**) and Markappoly ad
 - Adjustable reading width, font, and line spacing, plus your own custom CSS, and an option to block remote images
 - YAML frontmatter chrome (title, tags, date) above the preview
 - Relative Markdown links open sibling notes as tabs, and `guide.md#install` lands on the heading. Links to source files open in a highlighted, line-numbered code view (`main.rs#L42` jumps to the line); PDFs, images and office files open in their default app
+- **Data files**: CSV and TSV open as a table (click a cell to change it, add rows and columns), JSON reads as labelled fields with switches for true/false and small tables for lists of records, and JSONL shows as a list of records. Everything you didn't touch is saved exactly as written
 - **Back / Forward** (⌘[ / ⌘], or your mouse's side buttons) between documents and sections
 - The folder tree updates as notes are created, renamed, or deleted by other tools
 - **Compare** two open files side by side as a diff

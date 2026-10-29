@@ -773,11 +773,13 @@ fn list_snapshots(app: AppHandle, path: String) -> Vec<Snapshot> {
 
 /// File types a document link may hand to the system's default app. An
 /// allowlist, so a link can never launch an executable, script or installer.
+/// CSV and TSV open in the app's own table view instead. Mirrors EXTERNAL_EXTS
+/// in src/navigation.ts.
 const EXTERNAL_OPEN_EXTS: &[&str] = &[
     "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tif", "tiff", "heic", "avif",
-    "ico", "mp3", "m4a", "wav", "ogg", "flac", "mp4", "m4v", "mov", "webm", "csv", "tsv",
-    "xlsx", "xls", "docx", "doc", "pptx", "ppt", "key", "pages", "numbers", "odt", "ods",
-    "odp", "rtf", "epub", "html", "htm",
+    "ico", "mp3", "m4a", "wav", "ogg", "flac", "mp4", "m4v", "mov", "webm", "xlsx", "xls",
+    "docx", "doc", "pptx", "ppt", "key", "pages", "numbers", "odt", "ods", "odp", "rtf",
+    "epub", "html", "htm",
 ];
 
 fn externally_openable(path: &Path) -> bool {
@@ -1461,6 +1463,13 @@ mod external_open_tests {
     #[test]
     fn refuses_executables_and_scripts() {
         for p in ["a.app", "b.exe", "c.sh", "d.command", "e.js", "f.bat", "g", "h.pkg", "i.dmg"] {
+            assert!(!externally_openable(Path::new(p)), "{p}");
+        }
+    }
+
+    #[test]
+    fn data_files_open_in_the_app() {
+        for p in ["a.csv", "b.TSV", "c.json", "d.jsonl"] {
             assert!(!externally_openable(Path::new(p)), "{p}");
         }
     }

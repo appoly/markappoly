@@ -18,10 +18,12 @@ export function splitFragment(raw: string): { path: string; fragment: string | n
 /** Mirrors EXTERNAL_OPEN_EXTS in src-tauri/src/lib.rs. */
 const EXTERNAL_EXTS = new Set([
   "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tif", "tiff", "heic", "avif",
-  "ico", "mp3", "m4a", "wav", "ogg", "flac", "mp4", "m4v", "mov", "webm", "csv", "tsv",
-  "xlsx", "xls", "docx", "doc", "pptx", "ppt", "key", "pages", "numbers", "odt", "ods",
-  "odp", "rtf", "epub", "html", "htm",
+  "ico", "mp3", "m4a", "wav", "ogg", "flac", "mp4", "m4v", "mov", "webm", "xlsx", "xls",
+  "docx", "doc", "pptx", "ppt", "key", "pages", "numbers", "odt", "ods", "odp", "rtf",
+  "epub", "html", "htm",
 ]);
+/** Structured data, shown as a table or fields (DataView) and editable in place. */
+const DATA_EXTS = new Set(["csv", "tsv", "json", "jsonl", "ndjson"]);
 /**
  * Binaries: not readable as text, and not safe to hand to another app. Scripts
  * (.sh, .ps1, .bat…) are text, so they open read-only in the code view and are
@@ -32,14 +34,15 @@ const BLOCKED_EXTS = new Set([
   "dylib", "bin", "o", "a", "class", "wasm", "sqlite", "db", "woff", "woff2", "ttf", "otf",
 ]);
 
-export type FileKind = "markdown" | "text" | "external" | "blocked";
+export type FileKind = "markdown" | "data" | "text" | "external" | "blocked";
 
-/** How a linked file should open: as a document, as code, or in another app. */
+/** How a linked file should open: as a document, data, code, or in another app. */
 export function fileKind(path: string): FileKind {
   const name = path.split(/[\\/]/).pop() ?? "";
   const dot = name.lastIndexOf(".");
   const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
   if (MD_EXTENSIONS.includes(ext)) return "markdown";
+  if (DATA_EXTS.has(ext)) return "data";
   if (EXTERNAL_EXTS.has(ext)) return "external";
   if (BLOCKED_EXTS.has(ext)) return "blocked";
   return "text";

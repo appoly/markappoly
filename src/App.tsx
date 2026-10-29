@@ -107,6 +107,9 @@ const GraphView = lazy(() =>
 const CodeView = lazy(() =>
   import("./CodeView").then((m) => ({ default: m.CodeView })),
 );
+const DataView = lazy(() =>
+  import("./DataView").then((m) => ({ default: m.DataView })),
+);
 const HistoryView = lazy(() =>
   import("./HistoryView").then((m) => ({ default: m.HistoryView })),
 );
@@ -583,7 +586,10 @@ function App() {
   const openFile = useCallback(async () => {
     const selected = await open({
       multiple: false,
-      filters: [{ name: "Markdown", extensions: MD_EXTENSIONS }],
+      filters: [
+        { name: "Markdown", extensions: MD_EXTENSIONS },
+        { name: "Data", extensions: ["csv", "tsv", "json", "jsonl"] },
+      ],
     });
     if (typeof selected === "string") openPath(selected);
   }, [openPath]);
@@ -2417,6 +2423,15 @@ function App() {
               ) : mode === "preview" && filePath && fileKind(filePath) === "text" ? (
                 <Suspense fallback={<div className="lazy-fallback" />}>
                   <CodeView source={source} path={filePath} />
+                </Suspense>
+              ) : mode === "preview" && filePath && fileKind(filePath) === "data" ? (
+                <Suspense fallback={<div className="lazy-fallback" />}>
+                  <DataView
+                    key={active.id}
+                    source={source}
+                    path={filePath}
+                    onChange={(next) => patchDocById(active.id, { source: next, dirty: true })}
+                  />
                 </Suspense>
               ) : mode === "preview" ? (
                 <div className="markdown-body" ref={setBodyEl}>
