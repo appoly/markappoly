@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { finishPreviews, Preview, previewsPending, whenPreviewsComplete } from "./markdown";
@@ -68,20 +68,27 @@ describe("progressive rendering of long documents", () => {
   const long = Array.from({ length: 400 }, (_, i) => `## Part ${i}\n\nUnique paragraph number ${i} with some *text* in it.`).join("\n\n");
 
   it("paints the start first and completes on its own", async () => {
-    const { host, render } = mount();
-    await render(long);
-    const first = host.querySelectorAll("h2").length;
-    expect(first).toBeGreaterThan(0);
-    expect(first).toBeLessThan(400);
-    expect(previewsPending()).toBe(true);
-    for (let i = 0; i < 100 && previewsPending(); i++) {
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 0));
-      });
+    // Fake timers, so a slow machine can't run the follow-up passes before
+    // the first one is checked.
+    vi.useFakeTimers();
+    try {
+      const { host, render } = mount();
+      await render(long);
+      const first = host.querySelectorAll("h2").length;
+      expect(first).toBeGreaterThan(0);
+      expect(first).toBeLessThan(400);
+      expect(previewsPending()).toBe(true);
+      for (let i = 0; i < 100 && previewsPending(); i++) {
+        await act(async () => {
+          vi.runOnlyPendingTimers();
+        });
+      }
+      expect(previewsPending()).toBe(false);
+      expect(host.querySelectorAll("h2").length).toBe(400);
+      expect(host.querySelector<HTMLElement>("#part-399")?.dataset.sourceLine).toBe("1597");
+    } finally {
+      vi.useRealTimers();
     }
-    expect(previewsPending()).toBe(false);
-    expect(host.querySelectorAll("h2").length).toBe(400);
-    expect(host.querySelector<HTMLElement>("#part-399")?.dataset.sourceLine).toBe("1597");
   });
 
   it("finishes synchronously for lookups that need the whole document", async () => {
