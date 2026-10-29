@@ -58,7 +58,8 @@ export const editorHighlight = syntaxHighlighting(
     { tag: [t.link, t.url], color: "var(--accent)" },
     { tag: t.monospace, color: "var(--hl-string)" },
     { tag: t.quote, color: "var(--text-muted)", fontStyle: "italic" },
-    { tag: [t.list, t.processingInstruction], color: "var(--hl-keyword)" },
+    // Only the list markers (processingInstruction), not the item text.
+    { tag: t.processingInstruction, color: "var(--hl-keyword)" },
     { tag: [t.meta, t.contentSeparator], color: "var(--text-muted)" },
     { tag: t.keyword, color: "var(--hl-keyword)" },
     { tag: t.string, color: "var(--hl-string)" },

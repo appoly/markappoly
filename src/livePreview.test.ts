@@ -76,7 +76,7 @@ describe("live formatting", () => {
       'CheckboxWidget "[x]"',
       'CheckboxWidget "[ ]"',
     ]);
-    expect(deco).toContain('cm-lp-done@2 " two"');
+    expect(deco).toContain('cm-lp-done@2 "two"');
   });
 
   it("styles quotes and replaces rules", () => {

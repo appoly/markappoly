@@ -2591,7 +2591,9 @@ function App() {
             <span>
               {source === WELCOME && !filePath
                 ? "Markdown files stay on your computer"
-                : `${wordCount} words · ${readMin} min read`}
+                : filePath && fileKind(filePath) === "data"
+                  ? (filePath.split(".").pop() ?? "").toUpperCase()
+                  : `${wordCount} words · ${readMin} min read`}
               {compare
                 ? " · Compare"
                 : mode === "edit"

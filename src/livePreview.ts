@@ -418,7 +418,9 @@ export function liveDecorations(
             const marker = node.getChild("TaskMarker");
             if (!marker) return false;
             const checked = /x/i.test(doc.sliceString(marker.from, marker.to));
-            if (checked && marker.to < node.to) add(doneMark, marker.to, node.to);
+            // Strike the words, not the space after the box.
+            const textFrom = marker.to + (doc.sliceString(marker.to, marker.to + 1) === " " ? 1 : 0);
+            if (checked && textFrom < node.to) add(doneMark, textFrom, node.to);
             if (!isActive(marker))
               replace(Decoration.replace({ widget: new CheckboxWidget(checked) }), marker.from, marker.to);
             return true;

@@ -237,7 +237,8 @@
   display: grid;
   grid-template-columns: minmax(7em, 32%) 1fr;
   gap: 16px;
-  align-items: baseline;
+  /* Not baseline: WebKit mis-sizes the first row of a nested grid with it. */
+  align-items: center;
   padding: 5px 0;
   border-bottom: 1px solid var(--hairline);
 }
@@ -327,14 +328,16 @@
   outline: 2px solid var(--accent);
   border-radius: 4px;
 }
+/* The chevron points down; closed groups turn it to point right. */
 .dv-disclosure .chevron {
   flex: 0 0 auto;
   align-self: center;
   color: var(--text-muted);
+  transform: rotate(-90deg);
   transition: transform 0.15s ease;
 }
 .dv-group.open > .dv-disclosure .chevron {
-  transform: rotate(90deg);
+  transform: none;
 }
 .dv-disclosure .dv-key {
   color: var(--text);
