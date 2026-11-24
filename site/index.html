@@ -30,13 +30,11 @@
 
 <main id="top">
 
-<!-- Sheet 1: the exploded overview -->
-<section class="sheet overview" aria-labelledby="h-overview">
-  <div class="legend">
-    <p class="sheet-label"><span>Sheet 1 · Overview</span><span data-version>Latest release</span></p>
+<!-- Overview: the app as an exploded view -->
+<section class="sheet overview diagram" aria-labelledby="h-overview">
+  <div class="intro">
     <h1 id="h-overview">Markdown,<br>opened properly.</h1>
-    <p class="lede">A native Markdown app for macOS, Windows and Linux. Double-click a file and it opens formatted. Press ⌘E to edit, and again to read.</p>
-
+    <p class="lede">A native Markdown app for macOS, Windows and Linux.</p>
     <div class="cta">
       <a class="btn" data-primary href="https://github.com/appoly/markappoly/releases/latest">Download</a>
       <p class="cta-alt">
@@ -44,98 +42,114 @@
         <a href="#download">All platforms and formats</a>
       </p>
     </div>
-    <p class="meta"><span data-version>Latest release</span><span data-downloads></span> · MIT licence · by Appoly</p>
-
-    <ol class="parts" aria-label="What the overview shows">
-      <li data-n="1"><i class="n" aria-hidden="true">1</i><b>Formatted reading</b><span>Tables, highlighted code, KaTeX math and Mermaid diagrams, drawn properly.</span></li>
-      <li data-n="2"><i class="n" aria-hidden="true">2</i><b>Change callouts</b><span>When a file changes after you read it, each change gets a number in the margin.</span></li>
-      <li data-n="3"><i class="n" aria-hidden="true">3</i><b>Tabs and folders</b><span>Open a folder; every file is a tab away, and tabs come back when you relaunch.</span></li>
-      <li data-n="4"><i class="n" aria-hidden="true">4</i><b>Outline</b><span>Jump by heading. A dot marks each section that changed.</span></li>
-    </ol>
+    <p class="meta"><span data-version>Latest release</span><span data-downloads></span> · MIT licence</p>
   </div>
+
+  <ol class="parts" aria-label="Parts of the app shown in figure 1">
+    <li data-n="1" tabindex="0"><i class="n" aria-hidden="true">1</i><b>Formatted reading</b><span>Double-click a file and it opens formatted. ⌘E to edit.</span></li>
+    <li data-n="2" tabindex="0"><i class="n" aria-hidden="true">2</i><b>Diagrams and math</b><span>Mermaid diagrams and KaTeX math, drawn in place.</span></li>
+    <li data-n="3" tabindex="0"><i class="n" aria-hidden="true">3</i><b>Tabs and folders</b><span>Open a folder; tabs come back when you relaunch.</span></li>
+    <li data-n="4" tabindex="0"><i class="n" aria-hidden="true">4</i><b>Outline</b><span>Jump to any heading from the sidebar.</span></li>
+  </ol>
 
   <figure class="fig hero-fig">
     <div class="shot">
-      <img src="img/overview.webp" width="2200" height="1388" alt="Markappoly showing a Q4 roadmap with a table, a diagram and three numbered change callouts, a folder of files and an outline.">
-      <span class="co left" data-n="2" style="--x:43%;--y:56.1%"><i>2</i></span>
-      <span class="co left" data-n="4" style="--x:8%;--y:38.3%"><i>4</i></span>
-      <span class="co right" data-n="1" style="--x:73.9%;--y:67.2%"><i>1</i></span>
-      <span class="co top" data-n="3" style="--x:24.8%;--y:7.1%"><i>3</i></span>
+      <img src="img/overview.webp" width="2000" height="1280" alt="Markappoly showing a Q4 roadmap with a table, a flow diagram and a formula, a folder of files, tabs and an outline.">
+      <span class="co right" data-n="1" style="--x:66.5%;--y:66.1%"><i>1</i></span>
+      <span class="co right" data-n="2" style="--x:78.2%;--y:90.9%"><i>2</i></span>
+      <span class="co top" data-n="3" style="--x:55.5%;--y:9.1%;--my:3.5%"><i>3</i></span>
+      <span class="co left" data-n="4" style="--x:0.4%;--y:45%;--mx:12%;--my:70%"><i>4</i></span>
     </div>
-    <figcaption><span class="tag">Pass Go, straight to preview.</span><span class="sheet-label-inline">Fig. 1 · A roadmap, reopened after a teammate's edit</span></figcaption>
+    <figcaption><span class="tag">Pass Go, straight to preview.</span><span class="title-block">Sheet 1 · Fig. 1 · Overview</span></figcaption>
   </figure>
 </section>
 
 <div id="features"></div>
 
-<!-- Sheet 2: editing -->
-<section class="sheet split" aria-labelledby="h-edit">
+<!-- Editing -->
+<section class="sheet split diagram" aria-labelledby="h-edit">
   <div class="copy">
-    <p class="sheet-label"><span>Sheet 2 · Editing</span></p>
     <h2 id="h-edit">Edit in place, or side by side.</h2>
     <p>⌘E switches to a CodeMirror editor with live formatting: headings, emphasis, links, tables and math look formatted as you type, and the Markdown reappears on the line you're editing. The file stays plain Markdown.</p>
-    <ul class="facts">
-      <li>Split view puts source and preview side by side, scrolling together</li>
-      <li>Type <code>/</code> on an empty line to insert a table, task list, diagram or callout</li>
-      <li>Paste or drop an image and it's saved next to the document</li>
-      <li>Focus mode, typewriter scrolling and spellcheck</li>
-      <li>File History keeps a snapshot before every save</li>
-    </ul>
+    <ol class="parts compact">
+      <li data-n="1" tabindex="0"><i class="n" aria-hidden="true">1</i><b>Source</b><span>Live formatting, spellcheck, focus mode and typewriter scrolling.</span></li>
+      <li data-n="2" tabindex="0"><i class="n" aria-hidden="true">2</i><b>Preview</b><span>Split view keeps source and preview scrolling together.</span></li>
+      <li data-n="3" tabindex="0"><i class="n" aria-hidden="true">3</i><b>Format bar</b><span>Headings, lists, tables and links; or type <code>/</code> for a block menu.</span></li>
+    </ol>
+    <p class="aside">Paste an image and it's saved next to the document. File History keeps a snapshot before every save.</p>
   </div>
   <figure class="fig">
-    <div class="shot"><img src="img/editing.webp" width="2000" height="1250" loading="lazy" alt="Split view: Markdown source on the left with changed lines marked, the formatted preview on the right."></div>
-    <figcaption><span class="sheet-label-inline">Fig. 2 · Split view</span></figcaption>
+    <div class="shot">
+      <img src="img/editing.webp" width="2400" height="1520" loading="lazy" alt="Split view: Markdown source on the left, the formatted preview on the right, and the format bar above.">
+      <span class="co left" data-n="1" style="--x:20.75%;--y:59.2%;--mx:12%"><i>1</i></span>
+      <span class="co right" data-n="2" style="--x:95.1%;--y:52.4%"><i>2</i></span>
+      <span class="co right" data-n="3" style="--x:47.5%;--y:15.3%"><i>3</i></span>
+    </div>
+    <figcaption><span class="title-block">Sheet 2 · Fig. 2 · Split view</span></figcaption>
   </figure>
 </section>
 
-<!-- Sheet 3: notes -->
-<section class="sheet split flip" aria-labelledby="h-notes">
+<!-- Notes -->
+<section class="sheet split flip diagram" aria-labelledby="h-notes">
   <div class="copy">
-    <p class="sheet-label"><span>Sheet 3 · Notes</span></p>
     <h2 id="h-notes">A folder of notes becomes a knowledge base.</h2>
-    <p>Open a folder of notes, and an Obsidian vault works as it is. Nothing is locked in: every note stays a plain Markdown file on your disk.</p>
-    <ul class="facts">
-      <li><code>[[Wiki links]]</code> with autocomplete, and backlinks to every note that links here</li>
-      <li>Embed a note, or one section of it, with <code>![[Note#Section]]</code></li>
-      <li>Tags, hover previews and a graph of linked notes</li>
-      <li>Templates and daily notes</li>
-      <li>Frontmatter edits as typed properties</li>
-    </ul>
+    <p>Open a folder of notes, and an Obsidian vault works as it is. Every note stays a plain Markdown file on your disk.</p>
+    <ol class="parts compact">
+      <li data-n="1" tabindex="0"><i class="n" aria-hidden="true">1</i><b>Wiki links</b><span><code>[[Note]]</code> links with autocomplete, and hover previews.</span></li>
+      <li data-n="2" tabindex="0"><i class="n" aria-hidden="true">2</i><b>Callouts</b><span>GitHub and Obsidian callouts, foldable if you like.</span></li>
+      <li data-n="3" tabindex="0"><i class="n" aria-hidden="true">3</i><b>Backlinks</b><span>Every note that links here, with the line it's on.</span></li>
+    </ol>
+    <p class="aside">Also: embeds with <code>![[Note#Section]]</code>, tags, a graph of linked notes, templates, daily notes, and frontmatter as typed properties.</p>
   </div>
   <figure class="fig">
-    <div class="shot"><img src="img/notes.webp" width="2000" height="800" loading="lazy" alt="A launch notes file with a wiki link to the roadmap and a tip callout."></div>
-    <figcaption><span class="sheet-label-inline">Fig. 3 · Linked notes</span></figcaption>
+    <div class="shot">
+      <img src="img/notes.webp" width="2400" height="960" loading="lazy" alt="A launch notes file with wiki links, a tip callout, and the backlinks panel open in the sidebar.">
+      <span class="co top" data-n="1" style="--x:72.7%;--y:42.7%"><i>1</i></span>
+      <span class="co right" data-n="2" style="--x:88.7%;--y:67.9%"><i>2</i></span>
+      <span class="co left" data-n="3" style="--x:0.4%;--y:71.9%;--mx:12%;--my:92%"><i>3</i></span>
+    </div>
+    <figcaption><span class="title-block">Sheet 3 · Fig. 3 · Linked notes</span></figcaption>
   </figure>
 </section>
 
-<!-- Sheet 4: review -->
-<section class="sheet split dark-fig" aria-labelledby="h-review">
+<!-- Change review -->
+<section class="sheet split diagram" aria-labelledby="h-review">
   <div class="copy">
-    <p class="sheet-label"><span>Sheet 4 · Change review</span></p>
-    <h2 id="h-review">See exactly what changed since you last read it.</h2>
-    <p>Markappoly remembers the version of each file you last read. When a teammate's edit arrives with <code>git pull</code>, or an AI agent rewrites a plan, every change is numbered in the margin and listed in the review bar.</p>
-    <ul class="facts">
-      <li>Step through changes with F7; the ones you've seen go hollow</li>
-      <li>Hover a change to see what it said before</li>
-      <li>Comment on a passage, then copy every comment as Markdown feedback</li>
-      <li>One switch connects Claude Code, Codex or Cursor, so files they write open in the background</li>
-    </ul>
+    <h2 id="h-review">See what changed since you last read it.</h2>
+    <p>Markappoly remembers the version of each file you last read. When a teammate's edit arrives with <code>git pull</code>, or an AI agent rewrites a plan, every change is numbered in the margin.</p>
+    <ol class="parts compact">
+      <li data-n="1" tabindex="0"><i class="n" aria-hidden="true">1</i><b>Review bar</b><span>Lists the changes by section. F7 steps through them.</span></li>
+      <li data-n="2" tabindex="0"><i class="n" aria-hidden="true">2</i><b>Change in the margin</b><span>Hover to see what it said before.</span></li>
+      <li data-n="3" tabindex="0"><i class="n" aria-hidden="true">3</i><b>Mark as reviewed</b><span>Clears the marks once you've read them.</span></li>
+      <li data-n="4" tabindex="0"><i class="n" aria-hidden="true">4</i><b>Outline</b><span>A dot beside each section that changed.</span></li>
+    </ol>
+    <p class="aside">Comment on a passage and copy every comment as Markdown feedback. One switch connects Claude Code, Codex or Cursor, so files they write open in the background.</p>
   </div>
   <figure class="fig">
-    <div class="shot"><img src="img/review-dark.webp" width="2000" height="1063" loading="lazy" alt="The roadmap in dark mode with numbered change callouts and the review legend."></div>
-    <figcaption><span class="sheet-label-inline">Fig. 4 · Change review, dark theme</span></figcaption>
+    <div class="shot">
+      <img src="img/review-dark.webp" width="2400" height="1520" loading="lazy" alt="The roadmap in dark mode with two numbered changes, the review bar and the outline marks.">
+      <span class="co top" data-n="1" style="--x:61.5%;--y:15.3%"><i>1</i></span>
+      <span class="co left" data-n="2" style="--x:28.2%;--y:51.6%"><i>2</i></span>
+      <span class="co right" data-n="3" style="--x:98.8%;--y:15.3%"><i>3</i></span>
+      <span class="co left" data-n="4" style="--x:0.4%;--y:38.2%;--mx:12%;--my:58%"><i>4</i></span>
+    </div>
+    <figcaption><span class="title-block">Sheet 4 · Fig. 4 · Change review, dark theme</span></figcaption>
   </figure>
 </section>
 
-<!-- Sheet 5: data, export, command line -->
+<!-- Everything else -->
 <section class="sheet trio" aria-labelledby="h-more">
-  <p class="sheet-label"><span>Sheet 5 · Everything else</span></p>
   <h2 id="h-more">The rest of the toolkit.</h2>
   <div class="cols">
-    <div>
-      <h3>Data files</h3>
-      <p>CSV and TSV open as an editable table, JSON as labelled fields, JSONL one record per line. Saving rewrites only the values you changed.</p>
-      <div class="shot small"><img src="img/data.webp" width="2000" height="750" loading="lazy" alt="A CSV file shown as an editable table."></div>
+    <div class="data-row">
+      <div>
+        <h3>Data files</h3>
+        <p>CSV and TSV open as an editable table, JSON as labelled fields, JSONL one record per line. Saving rewrites only the values you changed.</p>
+      </div>
+      <figure class="fig">
+        <div class="shot"><img src="img/data.webp" width="1904" height="480" loading="lazy" alt="A CSV file shown as an editable table with six rows."></div>
+        <figcaption><span class="title-block">Sheet 5 · Fig. 5 · Data view</span></figcaption>
+      </figure>
     </div>
     <div>
       <h3>Export</h3>
@@ -152,9 +166,8 @@ claude -p "draft a plan" | markappoly</code></pre>
   </div>
 </section>
 
-<!-- Download sheet -->
+<!-- Download -->
 <section class="sheet download" id="download" aria-labelledby="h-download">
-  <p class="sheet-label"><span>Sheet 6 · Download</span><span data-version>Latest release</span></p>
   <h2 id="h-download">Get Markappoly.</h2>
   <p class="lede">Free and open source under the MIT licence. The app updates itself, asking before it downloads a new version.</p>
   <table class="dl">
@@ -166,7 +179,7 @@ claude -p "draft a plan" | markappoly</code></pre>
       <tr><th scope="row">Linux</th><td><a data-asset="linux-appimage" href="https://github.com/appoly/markappoly/releases/latest">.AppImage</a> · <a data-asset="linux-deb" href="https://github.com/appoly/markappoly/releases/latest">.deb</a> · <a data-asset="linux-rpm" href="https://github.com/appoly/markappoly/releases/latest">.rpm</a></td><td>x86_64</td></tr>
     </tbody>
   </table>
-  <p class="meta">Or build it from source: <a href="https://github.com/appoly/markappoly#build-from-source">instructions on GitHub</a>.</p>
+  <p class="meta"><span data-version>Latest release</span><span data-downloads></span>. Or build it from source: <a href="https://github.com/appoly/markappoly#build-from-source">instructions on GitHub</a>.</p>
 </section>
 
 </main>
