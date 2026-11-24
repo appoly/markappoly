@@ -17,7 +17,7 @@ export function Mermaid({ code, dark }: { code: string; dark: boolean }) {
         if (cancelled) return;
         mermaid.initialize({
           startOnLoad: false,
-          theme: dark ? "dark" : "default",
+          theme: dark ? "dark" : "neutral",
           securityLevel: "strict",
         });
         const id = `mermaid-${counter++}`;
@@ -40,11 +40,12 @@ export function Mermaid({ code, dark }: { code: string; dark: boolean }) {
   }, [code, dark]);
 
   if (error) return <pre className="mermaid-error">{error}</pre>;
+  // The SVG goes into its own element with no React children, so setting its
+  // innerHTML never removes a node React still thinks it owns.
   return (
-    <div className="mermaid-diagram" ref={ref} data-pending={pending || undefined}>
-      {pending && !ref.current?.innerHTML ? (
-        <div className="mermaid-pending">Rendering diagram…</div>
-      ) : null}
+    <div className="mermaid-diagram" data-pending={pending || undefined}>
+      {pending ? <div className="mermaid-pending">Rendering diagram…</div> : null}
+      <div className="mermaid-svg" ref={ref} />
     </div>
   );
 }

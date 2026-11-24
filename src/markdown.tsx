@@ -375,7 +375,8 @@ function PreviewInner({
     const tagClick = (tag: string) => live.current.onTagClick?.(tag);
     return {
       code({ node: _node, className, children, ...rest }) {
-        if (className === "language-mermaid") {
+        // rehype-highlight adds "hljs" alongside the language class.
+        if (/(?:^|\s)language-mermaid(?:\s|$)/.test(className ?? "")) {
           return <Mermaid code={String(children).replace(/\n$/, "")} dark={dark} />;
         }
         return (

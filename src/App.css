@@ -2629,6 +2629,12 @@ button.primary-action {
 .markdown-body > [data-review-n] {
   position: relative;
 }
+/* Tables and code blocks scroll sideways, which would clip the callout sitting
+   in the margin. While a change is marked on one, let it overflow instead. */
+.markdown-body > table[data-review-n],
+.markdown-body > pre[data-review-n] {
+  overflow: visible;
+}
 .markdown-body > [data-review-n]::before {
   content: attr(data-review-n);
   position: absolute;

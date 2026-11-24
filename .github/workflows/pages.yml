@@ -1,0 +1,62 @@
+name: Website
+
+# Publishes site/ to GitHub Pages. Runs when the site changes and whenever a
+# release is published, so the download links always point at the latest
+# installers.
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/pages.yml"]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # release.json gives the page the latest version, a direct link per
+      # installer, and the total installer downloads across releases.
+      - name: Write release.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/releases?per_page=100" > releases.json
+          jq '
+            def pick($re): (map(select(.name | test($re))) | first | .browser_download_url) // null;
+            (map(select(.draft == false and .prerelease == false)) | first) as $latest
+            | {
+                version: ($latest.tag_name | ltrimstr("v")),
+                downloads: ([.[] | .assets[] | select(.name | test("\\.(dmg|msi|exe|AppImage|deb|rpm)$")) | .download_count] | add // 0),
+                assets: ($latest.assets | {
+                  "mac-arm": pick("_aarch64\\.dmg$"),
+                  "mac-x64": pick("_x64\\.dmg$"),
+                  "win-msi": pick("\\.msi$"),
+                  "win-exe": pick("-setup\\.exe$"),
+                  "linux-appimage": pick("\\.AppImage$"),
+                  "linux-deb": pick("\\.deb$"),
+                  "linux-rpm": pick("\\.rpm$")
+                })
+              }' releases.json > site/release.json
+          cat site/release.json
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v5

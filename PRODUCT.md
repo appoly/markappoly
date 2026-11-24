@@ -10,17 +10,17 @@ web
 
 ## Users
 
-Primary: developers working alongside AI coding agents (Claude Code, Codex, Cursor). Agents write and rewrite Markdown such as plans, specs, READMEs and notes, and the developer reads what changed, judges it, and sends feedback back. They work in a terminal or IDE, and this app sits beside it.
+Anyone who reads and writes Markdown on the desktop: developers, writers and people keeping notes. They want a Markdown app that opens files formatted, edits well, and feels native on macOS, Windows and Linux. (Confirmed 2026-11-24: the product is positioned as an all-round Markdown app, not an agent tool.)
 
-Secondary: people keeping a local Markdown notes folder (Obsidian-vault compatible), and anyone who double-clicks a `.md` file and wants it to read well.
+Developers working alongside AI coding agents (Claude Code, Codex, Cursor) are an important group within that. Agents write and rewrite their plans, specs and notes, and change review plus the agent hooks serve them.
 
 ## Product Purpose
 
-A fast desktop reader and reviewer for Markdown. Files open formatted by default, and editing is one keystroke away. The app remembers the version of each file you last read and shows exactly what has changed since, so you can review a document written by an agent or a teammate like a diff, comment on it, and answer. It succeeds when a developer trusts it as the place where agent output lands and gets reviewed, and it never steals focus from their terminal.
+A fast, high-quality desktop app for reading and editing Markdown. Files open formatted by default, editing is one keystroke away, and math, diagrams, notes, data files and exports all work properly. The app also remembers the version of each file you last read and marks what has changed since. It succeeds when people choose it as their everyday Markdown app.
 
 ## Positioning
 
-Markdown review since you last read, wired directly to coding agents. One-click hooks open agent-written files in the background with changes highlighted, passage comments re-anchor across edits, and "Copy feedback" turns the comments into Markdown to paste back to the agent. It also live-streams piped output with `cmd | <app>`. None of the surveyed competitors (Typora, Obsidian, iA Writer, MarkEdit, Zettlr, Marked 2, VS Code preview) combines these.
+The all-round Markdown app done well: native, small and free on every desktop, with reading, editing, linked notes, data files and faithful exports in one place. Its distinctive extra is change review: numbered callouts for everything that changed since you last read a file, passage comments, and one-click hooks that open agent-written files in the background. None of the surveyed competitors (Typora, Obsidian, iA Writer, MarkEdit, Zettlr, Marked 2, VS Code preview) has change review. Lead with the quality of the app; present review and agents as one strong feature among several.
 
 ## Operating Context
 

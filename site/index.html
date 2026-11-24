@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markappoly: Markdown, opened properly</title>
+<meta name="description" content="A native Markdown app for macOS, Windows and Linux. Files open formatted, ⌘E to edit, with notes, data files, exports and change review. Free and open source.">
+<meta property="og:title" content="Markappoly: Markdown, opened properly">
+<meta property="og:description" content="A native Markdown app for macOS, Windows and Linux. Free and open source.">
+<meta property="og:image" content="https://appoly.github.io/markappoly/img/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#e9e7e2">
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+
+<header class="bar">
+  <a class="brand" href="#top"><img src="img/icon.svg" alt="" width="24" height="24">Markappoly</a>
+  <nav aria-label="Main">
+    <a href="#features">Features</a>
+    <a href="#download">Download</a>
+    <a href="https://github.com/appoly/markappoly/wiki">Docs</a>
+    <a class="gh" href="https://github.com/appoly/markappoly">GitHub</a>
+  </nav>
+</header>
+
+<main id="top">
+
+<!-- Sheet 1: the exploded overview -->
+<section class="sheet overview" aria-labelledby="h-overview">
+  <div class="legend">
+    <p class="sheet-label"><span>Sheet 1 · Overview</span><span data-version>Latest release</span></p>
+    <h1 id="h-overview">Markdown,<br>opened properly.</h1>
+    <p class="lede">A native Markdown app for macOS, Windows and Linux. Double-click a file and it opens formatted. Press ⌘E to edit, and again to read.</p>
+
+    <div class="cta">
+      <a class="btn" data-primary href="https://github.com/appoly/markappoly/releases/latest">Download</a>
+      <p class="cta-alt">
+        <span data-primary-note>Free for macOS, Windows and Linux</span><br>
+        <a href="#download">All platforms and formats</a>
+      </p>
+    </div>
+    <p class="meta"><span data-version>Latest release</span><span data-downloads></span> · MIT licence · by Appoly</p>
+
+    <ol class="parts" aria-label="What the overview shows">
+      <li data-n="1"><i class="n" aria-hidden="true">1</i><b>Formatted reading</b><span>Tables, highlighted code, KaTeX math and Mermaid diagrams, drawn properly.</span></li>
+      <li data-n="2"><i class="n" aria-hidden="true">2</i><b>Change callouts</b><span>When a file changes after you read it, each change gets a number in the margin.</span></li>
+      <li data-n="3"><i class="n" aria-hidden="true">3</i><b>Tabs and folders</b><span>Open a folder; every file is a tab away, and tabs come back when you relaunch.</span></li>
+      <li data-n="4"><i class="n" aria-hidden="true">4</i><b>Outline</b><span>Jump by heading. A dot marks each section that changed.</span></li>
+    </ol>
+  </div>
+
+  <figure class="fig hero-fig">
+    <div class="shot">
+      <img src="img/overview.webp" width="2200" height="1388" alt="Markappoly showing a Q4 roadmap with a table, a diagram and three numbered change callouts, a folder of files and an outline.">
+      <span class="co left" data-n="2" style="--x:43%;--y:56.1%"><i>2</i></span>
+      <span class="co left" data-n="4" style="--x:8%;--y:38.3%"><i>4</i></span>
+      <span class="co right" data-n="1" style="--x:73.9%;--y:67.2%"><i>1</i></span>
+      <span class="co top" data-n="3" style="--x:24.8%;--y:7.1%"><i>3</i></span>
+    </div>
+    <figcaption><span class="tag">Pass Go, straight to preview.</span><span class="sheet-label-inline">Fig. 1 · A roadmap, reopened after a teammate's edit</span></figcaption>
+  </figure>
+</section>
+
+<div id="features"></div>
+
+<!-- Sheet 2: editing -->
+<section class="sheet split" aria-labelledby="h-edit">
+  <div class="copy">
+    <p class="sheet-label"><span>Sheet 2 · Editing</span></p>
+    <h2 id="h-edit">Edit in place, or side by side.</h2>
+    <p>⌘E switches to a CodeMirror editor with live formatting: headings, emphasis, links, tables and math look formatted as you type, and the Markdown reappears on the line you're editing. The file stays plain Markdown.</p>
+    <ul class="facts">
+      <li>Split view puts source and preview side by side, scrolling together</li>
+      <li>Type <code>/</code> on an empty line to insert a table, task list, diagram or callout</li>
+      <li>Paste or drop an image and it's saved next to the document</li>
+      <li>Focus mode, typewriter scrolling and spellcheck</li>
+      <li>File History keeps a snapshot before every save</li>
+    </ul>
+  </div>
+  <figure class="fig">
+    <div class="shot"><img src="img/editing.webp" width="2000" height="1250" loading="lazy" alt="Split view: Markdown source on the left with changed lines marked, the formatted preview on the right."></div>
+    <figcaption><span class="sheet-label-inline">Fig. 2 · Split view</span></figcaption>
+  </figure>
+</section>
+
+<!-- Sheet 3: notes -->
+<section class="sheet split flip" aria-labelledby="h-notes">
+  <div class="copy">
+    <p class="sheet-label"><span>Sheet 3 · Notes</span></p>
+    <h2 id="h-notes">A folder of notes becomes a knowledge base.</h2>
+    <p>Open a folder of notes, and an Obsidian vault works as it is. Nothing is locked in: every note stays a plain Markdown file on your disk.</p>
+    <ul class="facts">
+      <li><code>[[Wiki links]]</code> with autocomplete, and backlinks to every note that links here</li>
+      <li>Embed a note, or one section of it, with <code>![[Note#Section]]</code></li>
+      <li>Tags, hover previews and a graph of linked notes</li>
+      <li>Templates and daily notes</li>
+      <li>Frontmatter edits as typed properties</li>
+    </ul>
+  </div>
+  <figure class="fig">
+    <div class="shot"><img src="img/notes.webp" width="2000" height="800" loading="lazy" alt="A launch notes file with a wiki link to the roadmap and a tip callout."></div>
+    <figcaption><span class="sheet-label-inline">Fig. 3 · Linked notes</span></figcaption>
+  </figure>
+</section>
+
+<!-- Sheet 4: review -->
+<section class="sheet split dark-fig" aria-labelledby="h-review">
+  <div class="copy">
+    <p class="sheet-label"><span>Sheet 4 · Change review</span></p>
+    <h2 id="h-review">See exactly what changed since you last read it.</h2>
+    <p>Markappoly remembers the version of each file you last read. When a teammate's edit arrives with <code>git pull</code>, or an AI agent rewrites a plan, every change is numbered in the margin and listed in the review bar.</p>
+    <ul class="facts">
+      <li>Step through changes with F7; the ones you've seen go hollow</li>
+      <li>Hover a change to see what it said before</li>
+      <li>Comment on a passage, then copy every comment as Markdown feedback</li>
+      <li>One switch connects Claude Code, Codex or Cursor, so files they write open in the background</li>
+    </ul>
+  </div>
+  <figure class="fig">
+    <div class="shot"><img src="img/review-dark.webp" width="2000" height="1063" loading="lazy" alt="The roadmap in dark mode with numbered change callouts and the review legend."></div>
+    <figcaption><span class="sheet-label-inline">Fig. 4 · Change review, dark theme</span></figcaption>
+  </figure>
+</section>
+
+<!-- Sheet 5: data, export, command line -->
+<section class="sheet trio" aria-labelledby="h-more">
+  <p class="sheet-label"><span>Sheet 5 · Everything else</span></p>
+  <h2 id="h-more">The rest of the toolkit.</h2>
+  <div class="cols">
+    <div>
+      <h3>Data files</h3>
+      <p>CSV and TSV open as an editable table, JSON as labelled fields, JSONL one record per line. Saving rewrites only the values you changed.</p>
+      <div class="shot small"><img src="img/data.webp" width="2000" height="750" loading="lazy" alt="A CSV file shown as an editable table."></div>
+    </div>
+    <div>
+      <h3>Export</h3>
+      <p>Text, single-file HTML, Word, PDF, or Copy as HTML to paste rich text anywhere. Exports match the preview, diagrams and math included. With Pandoc installed you also get RTF, EPUB and LaTeX.</p>
+    </div>
+    <div>
+      <h3>Command line</h3>
+      <p>Install the <code>markappoly</code> command from the app menu, then:</p>
+<pre><code>markappoly notes.md
+markappoly docs/
+claude -p "draft a plan" | markappoly</code></pre>
+      <p>Piped output shows live as it streams.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Download sheet -->
+<section class="sheet download" id="download" aria-labelledby="h-download">
+  <p class="sheet-label"><span>Sheet 6 · Download</span><span data-version>Latest release</span></p>
+  <h2 id="h-download">Get Markappoly.</h2>
+  <p class="lede">Free and open source under the MIT licence. The app updates itself, asking before it downloads a new version.</p>
+  <table class="dl">
+    <thead><tr><th scope="col">Platform</th><th scope="col">Download</th><th scope="col">Notes</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">macOS, Apple Silicon</th><td><a data-asset="mac-arm" href="https://github.com/appoly/markappoly/releases/latest">.dmg</a></td><td>Signed and notarized by Apple</td></tr>
+      <tr><th scope="row">macOS, Intel</th><td><a data-asset="mac-x64" href="https://github.com/appoly/markappoly/releases/latest">.dmg</a></td><td>Signed and notarized by Apple</td></tr>
+      <tr><th scope="row">Windows</th><td><a data-asset="win-msi" href="https://github.com/appoly/markappoly/releases/latest">.msi</a> · <a data-asset="win-exe" href="https://github.com/appoly/markappoly/releases/latest">.exe</a></td><td>64-bit installer</td></tr>
+      <tr><th scope="row">Linux</th><td><a data-asset="linux-appimage" href="https://github.com/appoly/markappoly/releases/latest">.AppImage</a> · <a data-asset="linux-deb" href="https://github.com/appoly/markappoly/releases/latest">.deb</a> · <a data-asset="linux-rpm" href="https://github.com/appoly/markappoly/releases/latest">.rpm</a></td><td>x86_64</td></tr>
+    </tbody>
+  </table>
+  <p class="meta">Or build it from source: <a href="https://github.com/appoly/markappoly#build-from-source">instructions on GitHub</a>.</p>
+</section>
+
+</main>
+
+<footer class="foot">
+  <span>Markappoly · MIT licence · by Appoly</span>
+  <span><a href="https://github.com/appoly/markappoly">GitHub</a> · <a href="https://github.com/appoly/markappoly/wiki">User manual</a> · <a href="https://github.com/appoly/markappoly/releases">Releases</a> · <a href="https://github.com/appoly/markappoly/blob/main/SECURITY.md">Security</a></span>
+</footer>
+
+</body>
+</html>

@@ -26,3 +26,6 @@ dist-ssr
 # Design-critique scratch from the impeccable skill
 .impeccable
 .claude/worktrees/
+
+# Written by the Pages workflow at deploy time
+site/release.json
