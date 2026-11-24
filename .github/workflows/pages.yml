@@ -21,11 +21,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
 
@@ -58,5 +55,15 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+
+  # A separate job, so the artifact is registered before deploy-pages looks
+  # for it (in one job it can query too early and find nothing).
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v5
