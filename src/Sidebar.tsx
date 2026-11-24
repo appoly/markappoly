@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { DisclosureIcon } from "./icons";
 import { invoke } from "@tauri-apps/api/core";
 import type { Heading } from "./markdown";
 import { buildFolderTree, type TreeNode, type TreeSort } from "./folderTree";
@@ -161,7 +162,9 @@ function FolderNode({
         title={node.name}
         aria-expanded={open}
       >
-        <span className="folder-chevron">{open ? "▾" : "▸"}</span>
+        <span className="folder-chevron" data-open={open || undefined}>
+          <DisclosureIcon />
+        </span>
         {node.name}
       </button>
       {open && <FileTree nodes={node.children} ctx={ctx} depth={depth + 1} />}
@@ -181,6 +184,7 @@ export function Sidebar({
   onGotoHeading,
   activeHeadingSlug,
   changedSlugs,
+  seenSlugs,
   query,
   onQueryChange,
   bookmarks,
@@ -202,6 +206,8 @@ export function Sidebar({
   activeHeadingSlug?: string | null;
   /** Sections holding changes the reader hasn't reviewed yet. */
   changedSlugs?: Set<string>;
+  /** Sections whose every change has been stepped to in the review. */
+  seenSlugs?: Set<string>;
   query: string;
   onQueryChange: (q: string) => void;
   bookmarks: string[];
@@ -494,7 +500,11 @@ export function Sidebar({
                     >
                       {h.text || "(untitled)"}
                       {changedSlugs?.has(h.slug) && (
-                        <span className="outline-changed" aria-label="changed" />
+                        <span
+                          className="outline-changed"
+                          data-seen={seenSlugs?.has(h.slug) || undefined}
+                          aria-label={seenSlugs?.has(h.slug) ? "changed, seen" : "changed"}
+                        />
                       )}
                     </button>
                   </li>

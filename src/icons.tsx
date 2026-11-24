@@ -122,3 +122,34 @@ export const ChevronIcon = () => (
     <path d="m3 4.5 3 3 3-3" />
   </svg>
 );
+
+export const ArrowUpIcon = () => (
+  <Icon size={15}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Icon>
+);
+
+export const ArrowDownIcon = () => (
+  <Icon size={15}>
+    <path d="M12 5v14M6 13l6 6 6-6" />
+  </Icon>
+);
+
+export const CloseIcon = () => (
+  <Icon size={12} strokeWidth={1.8}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </Icon>
+);
+
+export const AddIcon = () => (
+  <Icon size={14} strokeWidth={1.8}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+);
+
+/** Disclosure chevron; rotate with CSS when open. */
+export const DisclosureIcon = () => (
+  <Icon size={10} strokeWidth={2.4} className="disclosure-icon">
+    <path d="M9 6l6 6-6 6" />
+  </Icon>
+);

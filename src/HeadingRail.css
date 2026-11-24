@@ -21,7 +21,7 @@
   min-height: 44px;
   padding: 12px 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -36,18 +36,18 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--modal-bg);
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
   padding: 12px 8px;
 }
-.heading-rail-title { padding: 4px 12px 10px; font-size: 12px; color: var(--text-muted); }
+.heading-rail-title { padding: 4px 12px 10px; font-size: var(--chrome-size); color: var(--text-muted); }
 .heading-rail-outline { list-style: none; padding: 0; margin: 0; }
 .heading-rail-outline button {
   display: block;
   width: 100%;
   padding: 8px 12px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius);
   background: transparent;
   text-align: start;
   color: var(--text-muted);

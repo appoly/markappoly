@@ -15,8 +15,11 @@ export function FrontmatterBar({
   source,
   onChangeSource,
   onTagClick,
+  hideTitle,
 }: {
   source: string;
+  /** The document's own h1: a frontmatter title matching it isn't repeated. */
+  hideTitle?: string;
   onChangeSource?: (next: string) => void;
   onTagClick?: (tag: string) => void;
 }) {
@@ -34,7 +37,11 @@ export function FrontmatterBar({
     );
   }
 
-  const title = frontmatterTitle(fm.data);
+  const fmTitle = frontmatterTitle(fm.data);
+  const title =
+    fmTitle && hideTitle && fmTitle.trim().toLowerCase() === hideTitle.trim().toLowerCase()
+      ? null
+      : fmTitle;
   const tags = frontmatterTags(fm.data);
   const date = typeof fm.data.date === "string" ? fm.data.date : null;
   const description =

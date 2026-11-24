@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReviewComment } from "./review";
+import { ArrowDownIcon, ArrowUpIcon } from "./icons";
 
 // ----- Comment storage -----
 
@@ -52,9 +53,22 @@ export function useComments(key: string) {
 
 export type PlacedComment = ReviewComment & { at: number };
 
+/** One numbered change, as the review legend lists it. */
+export type LegendEntry = {
+  n: number;
+  label: string;
+  kind: "added" | "changed" | "removed";
+  seen: boolean;
+  current: boolean;
+};
+
+const KIND_LABEL = { added: "Added", changed: "Changed", removed: "Removed" } as const;
+
 export function ReviewBar({
   summary,
   position,
+  legend,
+  onJump,
   onPrev,
   onNext,
   diffOpen,
@@ -70,6 +84,9 @@ export function ReviewBar({
   summary: string | null;
   /** e.g. "2 of 3 · Setup" for the change last stepped to. */
   position: string | null;
+  /** Every change, numbered to match its callout in the margin. */
+  legend: LegendEntry[];
+  onJump: (index: number) => void;
   onPrev: () => void;
   onNext: () => void;
   diffOpen: boolean;
@@ -101,20 +118,42 @@ export function ReviewBar({
     <div className="format-bar review-bar" role="region" aria-label="Review">
       {summary && (
         <>
-          <span className="review-dot" aria-hidden />
-          <span className="review-summary">
-            Changed since you last read it · {summary}
+          <span className="review-summary" title="Changed since you last read it">
+            {summary}
           </span>
-          <button className="fmt" title="Previous change (⇧F7)" aria-label="Previous change" onClick={onPrev}>
-            ↑
+          <ol className="review-legend" aria-label="Changes since you last read it">
+            {legend.map((e, i) => (
+              <li key={e.n}>
+                <button
+                  className="review-legend-item"
+                  data-seen={e.seen || undefined}
+                  aria-current={e.current ? "step" : undefined}
+                  title={`${KIND_LABEL[e.kind]} · ${e.label}${e.seen ? " · seen" : ""}`}
+                  onClick={() => onJump(i)}
+                >
+                  <span className="review-num" aria-hidden>
+                    {e.n}
+                  </span>
+                  <span className="review-legend-label">{e.label}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          <button className="fmt icon-fmt" title="Previous change (⇧F7)" aria-label="Previous change" onClick={onPrev}>
+            <ArrowUpIcon />
           </button>
-          <button className="fmt" title="Next change (F7)" aria-label="Next change" onClick={onNext}>
-            ↓
+          <button className="fmt icon-fmt" title="Next change (F7)" aria-label="Next change" onClick={onNext}>
+            <ArrowDownIcon />
           </button>
-          {position && <span className="review-position">{position}</span>}
+          {position && (
+            <span className="visually-hidden" role="status">
+              {position}
+            </span>
+          )}
         </>
       )}
       <span className="spacer" />
+      <div className="review-actions">
       {comments.length > 0 && (
         <div className="menu-wrap" ref={wrap}>
           <button
@@ -175,13 +214,21 @@ export function ReviewBar({
       {summary && (
         <>
           <button className="fmt" aria-pressed={diffOpen} onClick={onToggleDiff}>
-            {diffOpen ? "Back to preview" : "Source diff"}
+            {diffOpen ? (
+              "Back to preview"
+            ) : (
+              <>
+                <span className="review-diff-full">Source diff</span>
+                <span className="review-diff-short">Diff</span>
+              </>
+            )}
           </button>
           <button className="fmt review-done" onClick={onMarkReviewed}>
             Mark as reviewed
           </button>
         </>
       )}
+      </div>
     </div>
   );
 }

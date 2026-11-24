@@ -1825,8 +1825,14 @@ function App() {
   );
   const [reviewDiff, setReviewDiff] = useState(false);
   const [reviewIndex, setReviewIndex] = useState(-1);
+  // Changes the reader has stepped to: their callouts go hollow and their
+  // legend entries strike through, so progress through a review is visible.
+  const [reviewSeen, setReviewSeen] = useState<ReadonlySet<number>>(() => new Set());
+  const reviewIndexRef = useRef(reviewIndex);
+  reviewIndexRef.current = reviewIndex;
   useEffect(() => {
     setReviewIndex(-1);
+    setReviewSeen(new Set());
     if (!hunks.length) setReviewDiff(false);
   }, [active.id, hunks]);
   const [comments, setComments] = useComments(filePath ?? `doc:${active.id}`);
@@ -1844,7 +1850,9 @@ function App() {
     if (!bodyEl || !showingPreview) return;
     const decorate = () => {
       clearReviewMarks(bodyEl);
-      changeTargets.current = markChanges(bodyEl, hunks);
+      const seen = new Set(reviewSeen);
+      seen.delete(reviewIndexRef.current);
+      changeTargets.current = markChanges(bodyEl, hunks, seen);
       commentAnchors.current = markComments(bodyEl, placedComments);
     };
     decorate();
@@ -1862,7 +1870,7 @@ function App() {
       cancelAnimationFrame(frame);
       clearCommentHighlights();
     };
-  }, [bodyEl, showingPreview, hunks, placedComments]);
+  }, [bodyEl, showingPreview, hunks, placedComments, reviewSeen, reviewIndex]);
   const lineMarks = useMemo<LineMark[]>(
     () =>
       hunks.flatMap((h): LineMark[] =>
@@ -1882,12 +1890,12 @@ function App() {
     el.dataset.reviewFocus = "1";
     window.setTimeout(() => delete el.dataset.reviewFocus, 1400);
   };
-  const stepChange = useCallback(
-    (delta: number) => {
-      if (!hunks.length) return;
+  const goToChange = useCallback(
+    (next: number) => {
+      if (!hunks[next]) return;
       if (reviewDiff) setReviewDiff(false);
-      const next = (reviewIndex + delta + hunks.length) % hunks.length;
       setReviewIndex(next);
+      setReviewSeen((seen) => (seen.has(next) ? seen : new Set(seen).add(next)));
       if (modeRef.current !== "preview" && filePath)
         setLineTarget({ path: filePath, line: Math.max(1, hunks[next].start) });
       requestAnimationFrame(() => {
@@ -1897,7 +1905,14 @@ function App() {
         queueMicrotask(() => requestAnimationFrame(() => flash(changeTargets.current[next])));
       });
     },
-    [hunks, reviewIndex, reviewDiff, filePath],
+    [hunks, reviewDiff, filePath],
+  );
+  const stepChange = useCallback(
+    (delta: number) => {
+      if (!hunks.length) return;
+      goToChange((reviewIndex + delta + hunks.length) % hunks.length);
+    },
+    [hunks.length, reviewIndex, goToChange],
   );
   const markReviewed = useCallback(() => {
     patchDocById(activeIdRef.current, { reviewBase: undefined });
@@ -1948,6 +1963,30 @@ function App() {
     copy: () => void copyFeedback(),
   };
 
+  const reviewLegend = useMemo(
+    () =>
+      hunks.map((h, i) => ({
+        n: i + 1,
+        label: (sectionFor(headings, Math.max(1, h.start))?.text ?? "Top of document").replace(
+          /^\s*(?:\d+(?:\.\d+)*|[IVXLC]+)[.)]?\s+/,
+          "",
+        ),
+        kind: h.kind,
+        seen: reviewSeen.has(i) && i !== reviewIndex,
+        current: i === reviewIndex,
+      })),
+    [hunks, headings, reviewSeen, reviewIndex],
+  );
+  const seenSlugSet = useMemo(() => {
+    const bySlug = new Map<string, boolean>();
+    hunks.forEach((h, i) => {
+      const slug = sectionFor(headings, Math.max(1, h.start))?.slug;
+      if (!slug) return;
+      // The change being looked at stays filled, as in the legend.
+      bySlug.set(slug, (bySlug.get(slug) ?? true) && reviewSeen.has(i) && i !== reviewIndex);
+    });
+    return new Set([...bySlug].filter(([, seen]) => seen).map(([slug]) => slug));
+  }, [hunks, headings, reviewSeen, reviewIndex]);
   const reviewPosition =
     reviewIndex >= 0 && hunks[reviewIndex]
       ? (() => {
@@ -1960,6 +1999,8 @@ function App() {
       <ReviewBar
         summary={hunks.length ? describeChanges(hunks, reviewSections.length) : null}
         position={reviewPosition}
+        legend={reviewLegend}
+        onJump={(i) => goToChange(i)}
         onPrev={() => stepChange(-1)}
         onNext={() => stepChange(1)}
         diffOpen={reviewDiff}
@@ -2221,6 +2262,7 @@ function App() {
             onGotoHeading={gotoHeading}
             activeHeadingSlug={activeHeadingSlug}
             changedSlugs={changedSlugSet}
+            seenSlugs={seenSlugSet}
             query={searchQuery}
             onQueryChange={setSearchQuery}
             bookmarks={prefs.bookmarks}
@@ -2485,6 +2527,7 @@ function App() {
                   )}
                   <FrontmatterBar
                     source={source}
+                    hideTitle={headings.find((h) => h.depth === 1)?.text}
                     onChangeSource={(next) =>
                       patchDocById(active.id, { source: next, dirty: true })
                     }

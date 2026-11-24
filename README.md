@@ -15,7 +15,7 @@
 
 Markappoly is a desktop app for reading and editing Markdown. Double-click a `.md` file and it opens formatted, with headings, tables, code, math and diagrams drawn properly. Press ⌘E when you want to change something, and again to go back to reading.
 
-It also keeps track of files that change under you. When an AI agent rewrites a plan or a teammate's edit arrives with `git pull`, Markappoly highlights what moved since you last read it. Claude Code, Codex and Cursor can open their files in it directly.
+It also keeps track of files that change under you. When an AI agent rewrites a plan or a teammate's edit arrives with `git pull`, Markappoly marks each change since you last read it. Claude Code, Codex and Cursor can open their files in it directly.
 
 It's built with Tauri and React, so the download is small and the app uses the native window chrome on each platform. macOS, Windows and Linux builds come from the same code.
 
@@ -39,10 +39,10 @@ The app updates itself. When a new version ships it asks before downloading, the
 
 ### Reading
 
-- GitHub-flavored Markdown: tables, task lists, strikethrough, footnotes and GitHub-style alerts (`> [!NOTE]`)
+- GitHub-flavored Markdown: tables, task lists, strikethrough, footnotes and GitHub-style alerts (`> [!NOTE]`). Alerts are flat panels with a small square coloured light beside the title
 - Syntax-highlighted code, KaTeX math and Mermaid diagrams
 - An outline with scroll spy, word count and reading time, and find in the document (⌘F)
-- YAML frontmatter shown as a title, tags and date above the text
+- YAML frontmatter shown as a single line of keys and values above the document. A frontmatter title that matches the first heading isn't repeated
 - Adjustable reading width, font and line spacing, your own CSS, and an option to block remote images
 - With the sidebar closed, a slim heading rail shows where you are; hover or click it to jump between sections
 - Present mode (⌘⇧P) turns the document into slides, split on `---`
@@ -52,9 +52,11 @@ The app updates itself. When a new version ships it asks before downloading, the
 
 Markappoly remembers the version of each file you last read. When the file changes on disk, it shows you the difference:
 
-- Changed and added passages are highlighted in the preview, with a marker where text was removed. Hover a change to see what it said before
-- A review bar counts the changes ("4 changes in 3 sections"), steps through them with F7 and ⇧F7, opens a source diff, and clears the highlights when you choose Mark as reviewed
-- The outline puts a dot beside each section with unreviewed changes, and in Edit and Split view the changed lines are marked in the editor
+- Each change gets a numbered orange dot in the left margin, with a thin line to the changed passage. A short dashed orange rule marks where text was removed. Hover a change to see the earlier text
+- The review bar lists the changes by number and section name, like a parts legend. Click an entry to jump to that change. The bar also opens a source diff
+- F7 and ⇧F7 step through the changes. A change you've stepped to turns hollow and its legend entry is struck through
+- The outline puts a dot beside each section with unreviewed changes. The dot turns hollow once you've seen every change in that section
+- Mark as reviewed clears everything. In Edit and Split view the changed lines are also marked in the editor
 - Select a passage to comment on it. Comments are stored per file and stay with their passage when the file changes
 - Copy feedback turns your comments into Markdown, with each section name and quoted passage, ready to paste back to the author or an agent
 
@@ -62,7 +64,7 @@ You can turn change tracking off in Settings (Highlight outside changes).
 
 ### Working with agents
 
-In Settings, under Agents, switch on Claude Code, Codex or Cursor. Markappoly then adds a hook to that agent's config, and whenever the agent writes or edits a Markdown file, the file opens here as a tab with its changes highlighted. It opens in the background, so your terminal or editor keeps focus while the agent works.
+In Settings, under Agents, switch on Claude Code, Codex or Cursor. Markappoly then adds a hook to that agent's config, and whenever the agent writes or edits a Markdown file, the file opens here as a tab with its changes marked. It opens in the background, so your terminal or editor keeps focus while the agent works.
 
 - The hook ignores other file types (including `.txt`) and always exits straight away, so it never slows down or fails the agent
 - Markappoly adds or removes only its own entry and keeps the rest of the config. It backs up the original first, as `settings.json.markappoly.bak` or `hooks.json.markappoly.bak`
@@ -124,6 +126,8 @@ Export to text, HTML, JSON (the Markdown syntax tree), Word (.docx) or PDF, or u
 
 ### On your desktop
 
+- A warm-grey frame around a paper-coloured reading panel, with dark graphite text. One orange is kept for changes and the Mark as reviewed button. The light and dark themes both follow this look
+- The app icon is a graphite M with a numbered orange callout
 - Frosted vibrancy on macOS and acrylic on Windows
 - System, light and dark themes. ⌘⇧L switches between light and dark
 - A native menu bar, drag and drop, "Open with" file association, and a window that reopens where you left it

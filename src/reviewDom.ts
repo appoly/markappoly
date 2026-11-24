@@ -23,10 +23,15 @@ const clip = (s: string, n = 600) => (s.length > n ? s.slice(0, n) + "…" : s);
 
 export function clearReviewMarks(root: HTMLElement) {
   root
-    .querySelectorAll<HTMLElement>("[data-review],[data-review-removed],[data-comment]")
+    .querySelectorAll<HTMLElement>(
+      "[data-review],[data-review-removed],[data-review-n],[data-review-cont],[data-comment]",
+    )
     .forEach((el) => {
       delete el.dataset.review;
       delete el.dataset.reviewRemoved;
+      delete el.dataset.reviewN;
+      delete el.dataset.reviewSeen;
+      delete el.dataset.reviewCont;
       delete el.dataset.comment;
       if (el.dataset.reviewTitle) {
         el.removeAttribute("title");
@@ -39,7 +44,11 @@ export function clearReviewMarks(root: HTMLElement) {
  * Mark changed blocks and removal points. Returns, per hunk, the element to
  * scroll to when stepping through changes.
  */
-export function markChanges(root: HTMLElement, hunks: Hunk[]): (HTMLElement | null)[] {
+export function markChanges(
+  root: HTMLElement,
+  hunks: Hunk[],
+  seen: ReadonlySet<number> = new Set(),
+): (HTMLElement | null)[] {
   const blocks = topBlocks(root);
   const tips = new Map<HTMLElement, string[]>();
   const tip = (el: HTMLElement, text: string) => {
@@ -47,7 +56,8 @@ export function markChanges(root: HTMLElement, hunks: Hunk[]): (HTMLElement | nu
     list.push(text);
     tips.set(el, list);
   };
-  const targets = hunks.map((h) => {
+  const hunkBlocks: HTMLElement[][] = [];
+  const targets = hunks.map((h, i) => {
     if (h.kind === "removed") {
       const after = blocks.find((b) => b.start >= h.start);
       const el = after?.el ?? blocks[blocks.length - 1]?.el ?? null;
@@ -55,9 +65,13 @@ export function markChanges(root: HTMLElement, hunks: Hunk[]): (HTMLElement | nu
         el.dataset.reviewRemoved = after ? "above" : "below";
         tip(el, `Removed:\n${clip(h.before)}`);
       }
+      hunkBlocks[i] = el ? [el] : [];
       return el;
     }
     const hit = blocks.filter((b) => b.start <= h.end && b.end >= h.start);
+    hunkBlocks[i] = hit.map((b) => b.el);
+    // Later blocks of the same change join the first into one tinted part.
+    hit.slice(1).forEach((b) => (b.el.dataset.reviewCont = "1"));
     for (const b of hit) {
       if (h.kind === "changed" || b.el.dataset.review !== "changed")
         b.el.dataset.review = h.kind;
@@ -65,6 +79,14 @@ export function markChanges(root: HTMLElement, hunks: Hunk[]): (HTMLElement | nu
     }
     // A change in frontmatter or between blocks: point at the next block.
     return hit[0]?.el ?? blocks.find((b) => b.start >= h.start)?.el ?? null;
+  });
+  // Number each change's callout in the margin. A block holding several
+  // changes carries the first number; the legend lists every one.
+  targets.forEach((el, i) => {
+    if (el && !el.dataset.reviewN) el.dataset.reviewN = String(i + 1);
+  });
+  hunkBlocks.forEach((els, i) => {
+    if (seen.has(i)) for (const el of els) el.dataset.reviewSeen = "1";
   });
   for (const [el, list] of tips) {
     el.title = list.join("\n\n");

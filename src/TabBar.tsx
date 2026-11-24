@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { AddIcon, CloseIcon } from "./icons";
 
 export function TabBar({
   tabs,
@@ -131,7 +132,7 @@ export function TabBar({
               aria-label={`Close ${t.name}`}
               onClick={() => onClose(t.id)}
             >
-              ×
+              <CloseIcon />
             </button>
           </div>
         ))}
@@ -142,7 +143,7 @@ export function TabBar({
         title="New tab (⌘T)"
         aria-label="New document"
       >
-        +
+        <AddIcon />
       </button>
     </div>
   );

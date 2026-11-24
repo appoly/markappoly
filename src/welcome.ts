@@ -6,7 +6,7 @@ You're looking at a live preview. Press **⌘E** to open the editor and again to
 
 ## Formatting
 
-Markappoly speaks **GitHub-Flavored Markdown**: **bold**, *italic*, ~~strikethrough~~, \`inline code\`, and [links](https://github.com/appoly/markappoly).
+Markappoly supports GitHub-Flavored Markdown, including **bold**, *italic*, ~~strikethrough~~, \`inline code\`, and [links](https://github.com/appoly/markappoly).
 
 > [!TIP]
 > Press **⌘⇧E** for a split view with the editor and this preview side by side, scrolling together.
@@ -70,7 +70,7 @@ flowchart LR
 Open a folder (**⌘⇧O**) and Markappoly treats it like a vault. If your notes came from Obsidian, they'll work as they are.
 
 - \`[[Wiki links]]\` connect notes by name, and the editor autocompletes them after \`[[\`
-- The sidebar shows **backlinks**: every note that points at the one you're reading
+- The sidebar shows backlinks, meaning every note that points at the one you're reading
 - \`![[Note]]\` embeds another note right here, \`![[Note#Section]]\` just that section
 - Hover an internal link to peek at the target without leaving this page
 - #tags are clickable, ==highlights== look like this, and \`%%comments%%\` never reach the preview
@@ -83,18 +83,18 @@ Open a folder (**⌘⇧O**) and Markappoly treats it like a vault. If your notes
 
 ### Do more
 
-- When a file changes on disk (an agent's rewrite, a \`git pull\`), the changes since you last read it are **highlighted**, with a review bar to step through them
+- When a file changes on disk (an agent's rewrite, a \`git pull\`), the changes since you last read it are highlighted, and a review bar lets you step through them
 - Turn on **Agents** in Settings and the Markdown that Claude Code, Codex or Cursor writes opens here as it's written
 - The editor formats as you type; type \`/\` on an empty line to insert any block
 - CSV, TSV, JSON and JSONL files open as tables and fields you can edit
-- Open several files as **tabs** (drag to reorder, **⌘⇧T** to reopen), then **Compare** two of them side by side
+- Open several files as tabs (drag to reorder, **⌘⇧T** to reopen), then **Compare** two of them side by side
 - Browse a whole folder from the sidebar (**⌘⇧O**), search across all of it, and drag files to move them
 - Paste or drag an image into the editor to attach it
-- Edit frontmatter as **properties** straight from the preview
+- Edit frontmatter as properties straight from the preview
 - Export to Word and PDF, or to more formats when Pandoc is installed
 - **⌘/** lists every shortcut
 
-New here? The full guide lives in the [user manual](https://github.com/appoly/markappoly/wiki).
+The full guide is in the [user manual](https://github.com/appoly/markappoly/wiki).
 
 > Open a file with ⌘O, or just start typing in **Edit** mode.
 `;
