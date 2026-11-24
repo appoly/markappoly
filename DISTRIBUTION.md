@@ -130,3 +130,13 @@ macOS builds are signed with the Developer ID certificate and notarized with the
 4. If a high/critical npm advisory or any Rust vulnerability remains and cannot be auto-fixed, it opens (or comments on) an "Outstanding dependency vulnerabilities" issue and does not ship.
 
 It does not cut a release for allowlisted advisories that are still unpatched. The job needs permission to push to `main` (or a bypass for the Actions bot if the branch is protected).
+
+## 7. Website (GitHub Pages)
+
+The site at https://appoly.github.io/markappoly/ is the static `site/` folder: `index.html`, `style.css`, `site.js` and `img/`. There is no build step.
+
+`.github/workflows/pages.yml` deploys it whenever `site/` changes on `main` and whenever a release is published. Before uploading, it writes `site/release.json` from the GitHub API: the latest version, a direct link to each installer, and the total installer downloads across releases. `site.js` reads that file to fill in the Download button, the download table and the version line. Without it, every link falls back to the latest release page. `site/release.json` is gitignored.
+
+The figures in `site/img/` are renders of the app's own frontend with demo documents. Each figure's numbered callouts are positioned in percent of the image in `index.html` (`--x`/`--y`, plus `--mx`/`--my` for phones), so a new screenshot needs its callout positions checked.
+
+Search engines: `index.html` carries a canonical URL, Open Graph and Twitter tags, and SoftwareApplication JSON-LD. `site/sitemap.xml` lists the page. A project site can't serve `robots.txt` (that lives at the root of `appoly.github.io`), so submit the sitemap in Google Search Console if you want it indexed faster.

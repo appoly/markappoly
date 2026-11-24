@@ -5,7 +5,8 @@
 <p align="center"><em>Pass Go, straight to preview.</em></p>
 
 <p align="center">
-  <a href="https://github.com/appoly/markappoly/releases/latest"><img src="https://img.shields.io/github/v/release/appoly/markappoly?label=download&color=2ea44f" alt="Latest release" /></a>
+  <a href="https://appoly.github.io/markappoly/"><img src="https://img.shields.io/badge/website-appoly.github.io%2Fmarkappoly-2a2a28" alt="Website" /></a>
+  <a href="https://github.com/appoly/markappoly/releases/latest"><img src="https://img.shields.io/github/v/release/appoly/markappoly?label=download&color=c94a0a" alt="Latest release" /></a>
   <a href="https://github.com/appoly/markappoly/wiki"><img src="https://img.shields.io/badge/docs-user%20manual-blue" alt="User manual" /></a>
   <img src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-informational" alt="Platforms" />
   <a href="LICENSE"><img src="https://img.shields.io/github/license/appoly/markappoly" alt="License" /></a>
@@ -22,12 +23,12 @@ It's built with Tauri and React, so the download is small and the app uses the n
 ## Screenshot
 
 <p align="center">
-  <img src="assets/screenshot.png" alt="Markappoly previewing a Markdown file" width="820" />
+  <img src="assets/screenshot.png" alt="Markappoly showing a roadmap with a table and a flow diagram, a folder of files, tabs and an outline" width="820" />
 </p>
 
 ## Download
 
-Get the installer for your platform from the [latest release](https://github.com/appoly/markappoly/releases/latest).
+Get the installer for your platform from the [website](https://appoly.github.io/markappoly/#download), which picks the right one for your system, or from the [latest release](https://github.com/appoly/markappoly/releases/latest).
 
 - macOS: download the `.dmg`, open it, and drag Markappoly into Applications. The build is signed and notarized by Apple, so it opens without security warnings.
 - Windows: download and run the `.msi`.
